@@ -26,7 +26,23 @@ pub fn configure(options: &mut NativeOptions, backend_override: Option<Backends>
             create.instance_descriptor.backends,
             create.instance_descriptor.backend_options.dx12.shader_compiler
         );
+        // deckrt: the last resort of the start-up supervisor (see `supervise`): the software
+        // adapter (WARP under DirectX 12), which needs no graphics driver at all.
+        if std::env::var_os(crate::supervise::SOFTWARE_ENV).is_some() {
+            create.native_adapter_selector = Some(std::sync::Arc::new(software_adapter));
+            log::info!("Windows graphics: the software adapter is asked for");
+        }
     }
+}
+
+/// deckrt: pick a CPU adapter, else whatever there is.
+fn software_adapter(adapters: &[eframe::wgpu::Adapter], _surface: Option<&eframe::wgpu::Surface<'_>>) -> Result<eframe::wgpu::Adapter, String> {
+    adapters
+        .iter()
+        .find(|a| a.get_info().device_type == eframe::wgpu::DeviceType::Cpu)
+        .or_else(|| adapters.first())
+        .cloned()
+        .ok_or_else(|| "no graphics adapter at all".to_string())
 }
 
 #[cfg(test)]

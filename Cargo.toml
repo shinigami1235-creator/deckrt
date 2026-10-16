@@ -41,6 +41,7 @@ deckcraft-opus = { path = "crates/opus" }
 deckcraft-interactive = { path = "crates/interactive" }
 deckcraft-model3d = { path = "crates/model3d" }
 deckcraft-phones = { path = "crates/phones" }
+deckcraft-show-ext = { path = "crates/show-ext" }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }

@@ -22,14 +22,21 @@ mod graphics;
 mod logging;
 #[cfg(not(target_arch = "wasm32"))]
 mod pasteboard;
+/// deckrt: a start that survives a graphics driver crash.
+mod supervise;
 
 use deckcraft_engine::Session;
 use deckcraft_ui_egui::{Services, SlideApp};
 
-struct App(SlideApp);
+struct App(SlideApp, bool);
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if !self.1 {
+            // deckrt: the first frame is drawn, so the start worked (see `supervise`).
+            self.1 = true;
+            supervise::mark_ready();
+        }
         self.0.logic(ctx);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -136,11 +143,12 @@ fn services() -> Services {
 const APP_ID: &str = "ai.storyteller.deckcraft";
 
 const USAGE: &str = "\
-Usage: deckcraft [--control PORT] [--sample] [--show] [FILE...]
+Usage: deckrt [--control PORT] [--sample] [--show] [--no-supervise] [FILE...]
 
   --control PORT  JSON control server on 127.0.0.1:PORT
   --sample        open the sample presentation
   --show          start the slide show
+  --no-supervise  open the window in this process (Windows starts a child per graphics backend)
   --help, -h      print this help and exit
   --version, -V   print the version and exit
 ";
@@ -164,6 +172,7 @@ fn startup(mut control_port: Option<u16>, args: impl IntoIterator<Item = String>
             "--show" => show = true,
             "--version" | "-V" => return Startup::Version,
             "--help" | "-h" => return Startup::Help,
+            "--no-supervise" => {} // deckrt: handled before
             _ => files.push(a),
         }
     }
@@ -179,6 +188,19 @@ fn main() -> eframe::Result {
     // First, so every start-up record (and the engine's panic hook, installed with the first
     // Session) is captured; see `logging`.
     let logger = logging::install();
+    // deckrt: on Windows the window is opened by a child, one graphics backend at a time, so a
+    // driver that crashes during start-up does not take the app with it.
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if supervise::wanted(&raw_args, |k| std::env::var(k).ok()) {
+        if let Some(logger) = logger
+            && let Some(d) = config_dir()
+        {
+            let _ = logger.attach_dir(&d.join(logging::LOG_DIR));
+        }
+        let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("deckrt"));
+        let args: Vec<String> = raw_args.into_iter().filter(|a| a != "--no-supervise").collect();
+        std::process::exit(supervise::run(&exe, &args, config_dir().as_deref()));
+    }
     let (control_port, files, sample, show) =
         match startup(std::env::var("DECKCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok()), std::env::args().skip(1)) {
             Startup::Help => {
@@ -186,7 +208,7 @@ fn main() -> eframe::Result {
                 return Ok(());
             }
             Startup::Version => {
-                println!("deckcraft {}", env!("CARGO_PKG_VERSION"));
+                println!("deckrt {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             Startup::Run { control_port, files, sample, show } => (control_port, files, sample, show),
@@ -246,11 +268,12 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             let mut app = SlideApp::new(Session::new(), services());
             load_prefs(&mut app);
-            // deckrt: 3D models draw through the window's wgpu device.
+            // deckrt: 3D models draw through the window's wgpu device; the show asks for the displays.
             if let Some(rs) = cc.wgpu_render_state.as_ref() {
                 app.deckrt.gpu_name = Some(deckcraft_ui_egui::deckrt::gpu::Gpu::adapter_name(rs));
                 app.deckrt.gpu = Some(deckcraft_ui_egui::deckrt::gpu::Gpu::new(rs));
             }
+            app.deckrt.list_displays = Some(Box::new(deckcraft_show_ext::displays::list));
             // AutoRecover: reopen what a previous run left unsaved, then keep it current.
             if std::env::var_os("DECKCRAFT_NO_RECOVERY").is_none() {
                 app.session.recovery_dir = deckcraft_engine::recovery::default_dir();
@@ -276,7 +299,7 @@ fn main() -> eframe::Result {
             if show {
                 app.start_show(0, false);
             }
-            Ok(Box::new(App(app)))
+            Ok(Box::new(App(app, false)))
         }),
     )
 }
@@ -290,7 +313,7 @@ mod tests {
     #[test]
     fn on_exit_ends_the_process_on_macos() {
         if std::env::var_os("DECKCRAFT_TEST_ON_EXIT").is_some() {
-            let mut app = App(SlideApp::new(Session::new(), Services::default()));
+            let mut app = App(SlideApp::new(Session::new(), Services::default()), true);
             println!("calling on_exit");
             eframe::App::on_exit(&mut app);
             println!("on_exit returned");

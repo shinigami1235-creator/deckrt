@@ -31,14 +31,14 @@ pub struct Show {
     /// The next slide's first frame, rendered in the background while this one is shown so
     /// advancing only uploads it (#240).
     prefetch: Option<Prefetch>,
-    blank: Option<Color32>,
+    pub(crate) blank: Option<Color32>, // deckrt hook: pub(crate)
     /// See All Slides covers the show until a slide is chosen.
     pub grid: bool,
     /// The next click on the slide zooms in there.
     pub zoom_arm: bool,
-    zoom: Option<Zoom>,
+    pub(crate) zoom: Option<Zoom>, // deckrt hook: pub(crate)
     thumbs: Vec<(usize, TextureHandle)>,
-    pen: bool,
+    pub(crate) pen: bool, // deckrt hook: pub(crate)
     /// A dot that follows the pointer and leaves no ink (`Cmd/Ctrl+L`).
     laser: bool,
     strokes: Vec<Vec<Pos2>>,
@@ -67,6 +67,8 @@ pub struct Show {
     media_clock: Option<(usize, f64)>,
     /// Media effects set off and not yet carried out: (shape, effect id).
     media_cues: Vec<(ShapeId, String)>,
+    /// deckrt hook: the interactive objects' state for this show.
+    pub ext: crate::deckrt::show::Ext,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +117,7 @@ fn render_frame(
         }
         st
     };
+    let skip = crate::deckrt::show::hidden_in_show(doc, idx); // deckrt hook: live objects draw themselves
     let img = deckcraft_render::render_slide(
         doc,
         idx,
@@ -124,6 +127,7 @@ fn render_frame(
             state: Some(&f),
             gif_times: times,
             threads,
+            skip: &skip,
             ..Default::default()
         },
     );
@@ -208,6 +212,7 @@ impl Show {
             links: None,
             media_clock: None,
             media_cues: vec![],
+            ext: Default::default(), // deckrt hook
         }
     }
 
@@ -433,6 +438,12 @@ fn keyboard(ctx: &egui::Context, show: &mut Show, doc: &Presentation, now: f64) 
     let mut actions = vec![];
     for (k, m) in keys {
         use egui::Key::*;
+        // deckrt hook: an object's shortcut key comes first.
+        if !show.grid && !show.ended && crate::deckrt::show::shortcut(&mut show.ext, &mut show.zoom, doc, show.state.slide, k, m, now, ctx) {
+            ctx.input_mut(|i| i.consume_key(m, k));
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            continue;
+        }
         if show.grid && !matches!(k, Escape | Minus) {
             // See All Slides takes no other keys until a slide is chosen.
             if k == G && plain(m) {
@@ -534,11 +545,13 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         show.timer = PresenterTimer::start(now);
         show.last_move = now;
         if !show.reading {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            let displays = app.deckrt.displays_now();
+            crate::deckrt::show::place_show(&ctx, &mut show, displays); // deckrt hook: the second display
         }
         show.after_enter(&doc, now);
     }
     let mut keep = keyboard(&ctx, &mut show, &doc, now);
+    crate::deckrt::show::logic(app, &mut show, &ctx, &doc, now); // deckrt hook
     let (clicked, secondary, moved) = ctx.input(|i| (i.pointer.primary_clicked(), i.pointer.secondary_clicked(), i.pointer.delta().length() > 0.0));
     if moved {
         show.last_move = now;
@@ -546,11 +559,14 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     let mut actions: Vec<ShowAction> = vec![];
     let full = ui.max_rect();
     let avail = if show.reading { Rect::from_min_max(full.min, pos2(full.max.x, full.max.y - 34.0)) } else { full };
+    let avail = crate::deckrt::show::audience_avail(&show, avail); // deckrt hook: the QR column
     let srect = fit(avail, &doc);
     let pointer = ctx.input(|i| i.pointer.interact_pos());
     show.expire_goto(now);
     // The clock of the triggered animations runs before anything reacts to the pointer.
     show.tick_triggers(&doc, now);
+    // deckrt hook: the objects take the pointer first.
+    let clicked = clicked && !crate::deckrt::show::audience_pointer(&mut show, &ctx, srect, &doc, now);
     let on_slide = !show.grid
         && !show.pen
         && !show.laser
@@ -619,6 +635,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     // A trackpad swipe (and the mouse wheel) turns the page. The pen is drawing, so a flick
     // there stays on the slide. Pinch zoom is not a show gesture.
     if !show.pen
+        && !show.ext.took_scroll // deckrt hook: the wheel zoomed a model
         && let Some(next) = crate::canvas::page_flick(ctx.input(|i| i.smooth_scroll_delta))
         && now - show.last_swipe > 0.35
     {
@@ -839,6 +856,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             if let Some(tex) = &tex {
                 painter.image(tex.id(), srect, show.zoom_uv(), Color32::WHITE);
             }
+            crate::deckrt::show::draw_audience(app, &mut show, &ctx, &painter, srect, &doc, now); // deckrt hook
             // Playing video: the current frame in its box, or full screen.
             let (sw, sh) = (doc.slide_size.width as f32, doc.slide_size.height as f32);
             let uv = show.zoom_uv();
@@ -887,6 +905,9 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if animating {
             ctx.request_repaint();
         }
+    }
+    if !show.ended {
+        crate::deckrt::show::draw_qr(&show, &painter, full, srect); // deckrt hook
     }
     if let Some(c) = show.blank {
         painter.rect_filled(full, CornerRadius::ZERO, c);
@@ -1034,14 +1055,16 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     }
     // Presenter view in a second window.
     if keep && show.presenter && !show.reading {
-        presenter_window(&ctx, &mut show, &doc, now, &mut keep);
+        presenter_window(&ctx, &mut show, &doc, now, &mut keep, &mut app.deckrt); // deckrt hook: `app.deckrt`
     }
+    show.ext.end_frame(); // deckrt hook
     if keep {
         app.show = Some(show);
     } else {
         app.media.stop_owned(crate::media::Owner::Show);
+        crate::deckrt::show::end_show(app, &mut show, &doc); // deckrt hook
         if !show.reading {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            crate::deckrt::show::restore_window(&ctx, &mut show); // deckrt hook: back to the editor's display
         }
         if show.rehearse {
             if let Some((_, tl)) = &show.timeline {
@@ -1306,7 +1329,7 @@ fn gif_hit(ctx: &egui::Context, ui: &Ui, show: &Show, doc_uid: u64, doc: &Presen
 }
 
 impl Show {
-    fn zoom_uv(&self) -> Rect {
+    pub(crate) fn zoom_uv(&self) -> Rect { // deckrt hook: pub(crate)
         self.zoom.map(Zoom::uv).unwrap_or_else(unit_uv)
     }
 
@@ -1512,7 +1535,7 @@ fn wall_clock() -> String {
 }
 
 #[derive(Clone, Copy)]
-struct Zoom {
+pub(crate) struct Zoom {
     nx: f32,
     ny: f32,
     scale: f32,
@@ -1521,6 +1544,11 @@ struct Zoom {
 impl Zoom {
     fn at(nx: f32, ny: f32) -> Self {
         Zoom { nx: finite_unit(nx), ny: finite_unit(ny), scale: ZOOM_SCALE }
+    }
+
+    /// deckrt hook: a zoom region object's window, centred on `(nx, ny)` at `scale`.
+    pub(crate) fn region(nx: f32, ny: f32, scale: f32) -> Self {
+        Zoom { nx: finite_unit(nx), ny: finite_unit(ny), scale: if scale.is_finite() { scale.clamp(1.01, 20.0) } else { ZOOM_SCALE } }
     }
 
     fn uv(self) -> Rect {
@@ -1723,7 +1751,7 @@ fn render_thumb(ctx: &egui::Context, show: &mut Show, doc: &Presentation, i: usi
     Some(tex)
 }
 
-fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, now: f64, keep: &mut bool) {
+fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &std::sync::Arc<Presentation>, now: f64, keep: &mut bool, deckrt: &mut crate::deckrt::State) {
     let cur = show.state.slide;
     let next = show.state.peek_next(doc);
     let cur_tex = show.tex.as_ref().map(|(_, t)| t.clone());
@@ -1752,13 +1780,15 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
     let button = |ui: &mut Ui, s: &str| {
         ui.add(egui::Button::new(egui::RichText::new(s).size(15.0).color(Color32::WHITE)).fill(Color32::from_gray(60)).min_size(vec2(0.0, 30.0)))
     };
+    let mut go_to: Option<usize> = None; // deckrt hook: a poll's winning slide
     ctx.show_viewport_immediate(
         egui::ViewportId::from_hash_of("deckcraft_presenter"),
-        egui::ViewportBuilder::default().with_title("Presenter View — deckrt").with_inner_size([1100.0, 700.0]),
+        crate::deckrt::show::presenter_builder(show), // deckrt hook: on its own display
         |ui, _| {
             if !keyboard(ui.ctx(), show, doc, now) {
                 *keep = false;
             }
+            crate::deckrt::show::move_presenter_if_asked(ui, show); // deckrt hook
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             let elapsed = show.timer.elapsed(now);
             let paused = show.timer.paused();
@@ -1804,6 +1834,7 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
                     if button(ui, show.zoom_label()).clicked() {
                         show.zoom_key();
                     }
+                    crate::deckrt::show::presenter_toolbar(ui, show); // deckrt hook: the display picker
                 });
                 ui.add_space(8.0);
                 let avail = ui.available_rect_before_wrap();
@@ -1832,6 +1863,8 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
                 if let Some(c) = show.blank {
                     ui.painter().rect_filled(cr, CornerRadius::ZERO, c);
                 }
+                // deckrt hook: the objects over the slide and their control rows under it.
+                crate::deckrt::show::presenter_slide(ui, show, doc, deckrt, cr, Rect::from_min_max(pos2(left.min.x, cr.max.y + 8.0), left.max), now, &mut go_to);
                 let nr = next_rect(right, doc);
                 ui.painter().text(right.min, Align2::LEFT_TOP, "Next", theme::font(13.0), Color32::from_gray(170));
                 match &next_tex {
@@ -1843,7 +1876,9 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
                         ui.painter().text(nr.center(), Align2::CENTER_CENTER, "End of slide show", theme::font(13.0), Color32::from_gray(170));
                     }
                 }
-                let notes_head = Rect::from_min_size(pos2(right.min.x, nr.max.y + 12.0), vec2(right.width(), 28.0));
+                // deckrt hook: the Phones section between the next slide and the notes.
+                let used = crate::deckrt::show::presenter_phones(ui, show, Rect::from_min_max(pos2(right.min.x, nr.max.y + 12.0), right.max));
+                let notes_head = Rect::from_min_size(pos2(right.min.x, nr.max.y + 12.0 + used), vec2(right.width(), 28.0));
                 let mut head = ui.new_child(egui::UiBuilder::new().max_rect(notes_head));
                 head.horizontal(|ui| {
                     ui.label(egui::RichText::new("Notes").size(13.0).color(Color32::from_gray(170)));
@@ -1868,6 +1903,9 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &Presentation, no
             }
         },
     );
+    if let Some(i) = go_to {
+        actions.push(show.state.goto(doc, i)); // deckrt hook
+    }
     for a in actions {
         if !show.apply(a, doc, now) {
             *keep = false;
@@ -1892,11 +1930,11 @@ mod tests {
         let doc = session.active().unwrap().doc.clone();
         let show = Show::new(&doc, 0, false, true);
         let mut harness = egui_kittest::Harness::builder().with_size(vec2(1100.0, 700.0)).build_ui_state(
-            |ui, (doc, show, keep): &mut (std::sync::Arc<Presentation>, Show, bool)| {
+            |ui, (doc, show, keep, deckrt): &mut (std::sync::Arc<Presentation>, Show, bool, crate::deckrt::State)| {
                 let now = ui.input(|i| i.time);
-                presenter_window(ui.ctx(), show, doc, now, keep);
+                presenter_window(ui.ctx(), show, doc, now, keep, deckrt); // deckrt hook
             },
-            (doc, show, true),
+            (doc, show, true, crate::deckrt::State::default()),
         );
         harness.run_steps(2);
         for (key, slide) in [

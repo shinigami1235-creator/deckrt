@@ -31,6 +31,29 @@ fn text_field(ui: &mut Ui, id: egui::Id, value: &str, multiline: bool) -> Option
     None
 }
 
+/// A number field's change, once: when typed, or at the end of a drag with the value the drag
+/// reached, so a drag is one undo step rather than one per frame.
+fn committed<T: Copy + Send + Sync + 'static>(ui: &mut Ui, r: egui::Response, v: &mut T) -> bool {
+    let key = r.id.with("deckrt-drag");
+    if r.dragged() {
+        if r.changed() {
+            ui.data_mut(|d| d.insert_temp(key, *v));
+        }
+        false
+    } else if r.drag_stopped() {
+        match ui.data_mut(|d| d.get_temp::<T>(key)) {
+            Some(x) => {
+                *v = x;
+                ui.data_mut(|d| d.remove::<T>(key));
+                true
+            }
+            None => false,
+        }
+    } else {
+        r.changed()
+    }
+}
+
 fn label(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(text).font(theme::bold(12.0)));
 }
@@ -269,7 +292,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             ui.horizontal(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
-                    if ui.add(egui::DragValue::new(&mut r[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3)).changed() {
+                    let resp = ui.add(egui::DragValue::new(&mut r[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
+                    if committed(ui, resp, &mut r[i]) {
                         changed = true;
                     }
                 }
@@ -377,7 +401,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             changed = true;
                         }
                     });
-                    if ui.add(egui::DragValue::new(&mut c.products[i].default_dose).speed(0.1).range(0.0..=1000.0).max_decimals(2)).changed() {
+                    let resp = ui.add(egui::DragValue::new(&mut c.products[i].default_dose).speed(0.1).range(0.0..=1000.0).max_decimals(2));
+                    if committed(ui, resp, &mut c.products[i].default_dose) {
                         changed = true;
                     }
                     ui.scope(|ui| {
@@ -457,7 +482,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         ui.horizontal(|ui| {
             for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                 ui.label(*name);
-                if ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3)).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
+                if committed(ui, resp, &mut v[i]) {
                     moved = true;
                 }
             }
@@ -510,7 +536,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 for (i, name) in ["x", "y", "z"].iter().enumerate() {
                     ui.label(*name);
                     let mut deg = c.initial_rotation[i].to_degrees();
-                    if ui.add(egui::DragValue::new(&mut deg).speed(1.0).suffix("°").fixed_decimals(0)).changed() {
+                    let resp = ui.add(egui::DragValue::new(&mut deg).speed(1.0).suffix("°").fixed_decimals(0));
+                    if committed(ui, resp, &mut deg) {
                         c.initial_rotation[i] = deg.to_radians();
                         changed = true;
                     }
@@ -551,7 +578,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 ui.label("Picture shown first");
                 let n = c.images.len().max(1);
                 let mut first = c.index + 1;
-                if ui.add(egui::DragValue::new(&mut first).range(1..=n)).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut first).range(1..=n));
+                if committed(ui, resp, &mut first) {
                     c.index = first - 1;
                     changed = true;
                 }
@@ -571,7 +599,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 ui.label("Photograph shown first");
                 let n = c.images.len().max(1);
                 let mut first = c.initial_index + 1;
-                if ui.add(egui::DragValue::new(&mut first).range(1..=n)).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut first).range(1..=n));
+                if committed(ui, resp, &mut first) {
                     c.initial_index = first - 1;
                     changed = true;
                 }
@@ -588,13 +617,15 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Zoom(c) => {
             ui.horizontal(|ui| {
                 ui.label("Largest magnification");
-                if ui.add(egui::DragValue::new(&mut c.max_scale).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1)).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut c.max_scale).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1));
+                if committed(ui, resp, &mut c.max_scale) {
                     changed = true;
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("Zoom time");
-                if ui.add(egui::DragValue::new(&mut c.duration_ms).speed(10).range(0..=5000).suffix(" ms")).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut c.duration_ms).speed(10).range(0..=5000).suffix(" ms"));
+                if committed(ui, resp, &mut c.duration_ms) {
                     changed = true;
                 }
             });
@@ -605,7 +636,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
             ui.horizontal(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
-                    if ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(2)).changed() {
+                    let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(2));
+                    if committed(ui, resp, &mut v[i]) {
                         changed = true;
                     }
                 }
@@ -660,7 +692,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Measure(c) => {
             ui.horizontal(|ui| {
                 ui.label("Line width");
-                if ui.add(egui::DragValue::new(&mut c.line_width).speed(0.5).range(1.0..=20.0).suffix(" px")).changed() {
+                let resp = ui.add(egui::DragValue::new(&mut c.line_width).speed(0.5).range(1.0..=20.0).suffix(" px"));
+                if committed(ui, resp, &mut c.line_width) {
                     changed = true;
                 }
             });

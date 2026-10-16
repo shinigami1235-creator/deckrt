@@ -25,6 +25,9 @@ pub mod gpu {
 }
 pub mod model_view;
 pub mod pane;
+pub mod phones;
+pub mod pictures;
+pub mod show;
 
 use deckcraft_interactive::object::{self as obj, Kind};
 use egui::Ui;
@@ -54,6 +57,17 @@ pub struct State {
     pub turning: Option<(u32, egui::Pos2)>,
     /// A picker is open (a second click on a ribbon button does nothing).
     pub picking: bool,
+    /// Pictures the show draws, as textures.
+    pub pictures: pictures::Pictures,
+    /// The connected displays, asked for when a show starts (the desktop app fills this in).
+    pub list_displays: Option<Box<dyn FnMut() -> Vec<show::DisplayInfo>>>,
+}
+
+impl State {
+    /// The displays connected now, or none when the host cannot say.
+    pub fn displays_now(&mut self) -> Vec<show::DisplayInfo> {
+        self.list_displays.as_mut().map(|f| f()).unwrap_or_default()
+    }
 }
 
 impl State {

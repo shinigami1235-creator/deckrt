@@ -1,0 +1,131 @@
+# Builds deckrt for Windows and uploads it as a zip (and an MSI when WiX cooperates).
+#
+# Download: Actions › Windows build › the run › Artifacts › deckrt-windows-x64.
+# The zip holds deckrt.exe, deckcraft-cli.exe, Start deckrt.bat and the licence files. Fonts are
+# embedded in the exe from the craft-fonts repository, so nothing else is needed at run time.
+
+name: Windows build
+
+on:
+  push:
+    branches: [main, wip/fable-partial]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      # The fonts the exe embeds (see crates/fonts/build.rs); the build fails without them.
+      CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
+      CRAFT_FONTS_REQUIRED: "1"
+      # The exe's icon and version block must embed.
+      DECKCRAFT_REQUIRE_WINRES: "1"
+      # Static C runtime: no Visual C++ redistributable needed on the target machine.
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+    steps:
+      - name: Check out deckrt
+        uses: actions/checkout@v4
+        with:
+          path: deckrt
+
+      - name: Check out the fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+          path: craft-fonts
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: deckrt -> target
+
+      - name: Build the release exe
+        working-directory: deckrt
+        run: cargo build --release --locked -p deckcraft -p deckcraft-cli --target x86_64-pc-windows-msvc
+
+      - name: Check the exe is a Windows GUI program and the CLI a console one
+        working-directory: deckrt
+        shell: pwsh
+        run: |
+          function Get-Subsystem([string] $Path) {
+            $bytes = [System.IO.File]::ReadAllBytes($Path)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+            return [BitConverter]::ToUInt16($bytes, $pe + 0x5C)
+          }
+          $bin = "target\x86_64-pc-windows-msvc\release"
+          if ((Get-Subsystem "$bin\deckrt.exe") -ne 2) { throw "deckrt.exe is not a GUI program" }
+          if ((Get-Subsystem "$bin\deckcraft-cli.exe") -ne 3) { throw "deckcraft-cli.exe is not a console program" }
+          & "$bin\deckcraft-cli.exe" --version
+          & "$bin\deckrt.exe" --version
+
+      - name: Run the tests that matter on Windows
+        working-directory: deckrt
+        run: cargo test --release --locked --target x86_64-pc-windows-msvc -p deckcraft-phones -p deckcraft-show-ext -p deckcraft-interactive -p deckcraft-model3d -p deckcraft
+
+      - name: Assemble the zip
+        working-directory: deckrt
+        shell: pwsh
+        run: |
+          $bin = "target\x86_64-pc-windows-msvc\release"
+          $out = "dist\deckrt-windows-x64"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "$bin\deckrt.exe" $out
+          Copy-Item "$bin\deckcraft-cli.exe" $out
+          Copy-Item "Start deckrt.bat" $out
+          Copy-Item LICENSE-MIT, LICENSE-APACHE, NOTICE, ATTRIBUTION.md $out
+          Copy-Item -Recurse licenses "$out\licenses"
+          Set-Content -Path "$out\README.txt" -Value @"
+          deckrt for Windows
+
+          Double-click deckrt.exe, or Start deckrt.bat, to open the program.
+          deckcraft-cli.exe renders and converts decks from a command prompt.
+
+          Windows SmartScreen may say the program is unrecognised the first time, since it is not
+          signed: choose More info, then Run anyway.
+
+          deckrt is a fork of DeckCraft (MIT OR Apache-2.0). See NOTICE and ATTRIBUTION.md.
+          "@
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: deckrt-windows-x64
+          path: deckrt/dist/deckrt-windows-x64
+          if-no-files-found: error
+
+      - name: Installer (WiX v5)
+        working-directory: deckrt
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $msiVersion = ($version -split '-')[0]
+          $bin = (Resolve-Path "target\x86_64-pc-windows-msvc\release").Path
+          $icon = (Resolve-Path "assets\app-icon\deckcraft.ico").Path
+          New-Item -ItemType Directory -Force -Path dist\msi | Out-Null
+          wix build packaging\windows\deckrt.wxs -arch x64 -d "Version=$msiVersion" -d "BinDir=$bin" -d "IconPath=$icon" -d "StartBat=$((Resolve-Path 'Start deckrt.bat').Path)" -o "dist\msi\deckrt-$version-windows-x64.msi"
+
+      - name: Upload the installer
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deckrt-windows-x64-installer
+          path: deckrt/dist/msi
+          if-no-files-found: ignore

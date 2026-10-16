@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  deckrt MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by .github/workflows/windows-build.yml:
+
+    wix build deckrt.wxs -arch x64 -d Version=0.7.0 -d BinDir=... -d IconPath=... -d StartBat=... -o out.msi
+
+  Per-machine install into Program Files, a Start Menu shortcut, and deckrt offered under
+  "Open with" for .pptx/.potx/.ppsx/.deckcraft without taking over the default app for them.
+
+  The UpgradeCode is deckrt's own (not DeckCraft's), fixed from here on so later versions replace
+  earlier ones; never change it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="deckrt"
+      Manufacturer="deckrt"
+      Version="$(var.Version)"
+      UpgradeCode="EF3AC0FB-D0E2-4741-90AB-0F004D6DB586"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="deckrt presentations with interactive objects" Manufacturer="deckrt" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of deckrt is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="DeckrtIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="DeckrtIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/shinigami1235-creator/deckrt" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="deckrt" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="deckrt" Level="1">
+      <ComponentGroupRef Id="DeckrtFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="DeckrtFiles" Directory="INSTALLFOLDER">
+      <Component Id="DeckrtApp" Guid="0DD25ECC-AF23-4ED7-B4A4-07E2924EF5E5">
+        <File Id="DeckrtExe" Source="$(var.BinDir)\deckrt.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="deckrt"
+              Description="deckrt presentations with interactive objects" WorkingDirectory="INSTALLFOLDER" Advertise="yes"
+              Icon="DeckrtIcon.ico" IconIndex="0" />
+        </File>
+
+        <!-- "Open with" for the presentation formats, without becoming the default. -->
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe" Name="FriendlyAppName" Value="deckrt" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\shell\open\command" Value="&quot;[#DeckrtExe]&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".deckcraft" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".pptx" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".potx" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".ppsx" Value="" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\deckrt.exe" Value="[#DeckrtExe]" Type="string" />
+      </Component>
+
+      <Component Id="DeckrtCli">
+        <File Id="DeckcraftCliExe" Source="$(var.BinDir)\deckcraft-cli.exe" KeyPath="yes" />
+      </Component>
+
+      <Component Id="DeckrtStartBat">
+        <File Id="StartBat" Source="$(var.StartBat)" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

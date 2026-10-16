@@ -76,6 +76,12 @@ impl PhoneServer {
     /// Start on `addresses` (every private address of the machine when empty) at `port` or the
     /// next free one.
     pub fn start(addresses: Vec<IpAddr>, port: u16) -> Result<PhoneServer, String> {
+        Self::start_with_token(addresses, port, None)
+    }
+
+    /// [`PhoneServer::start`] keeping `token` from an earlier server, so phones already on the
+    /// page keep working after a restart on another address.
+    pub fn start_with_token(addresses: Vec<IpAddr>, port: u16, token: Option<String>) -> Result<PhoneServer, String> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -83,7 +89,7 @@ impl PhoneServer {
             .map_err(|e| format!("the phone server's runtime did not start: {e}"))?;
         let addresses =
             if addresses.is_empty() { list_addresses().into_iter().filter_map(|a| a.address.parse::<IpAddr>().ok()).collect() } else { addresses };
-        let running = rt.block_on(start(ServerConfig { addresses, port, ..Default::default() }))?;
+        let running = rt.block_on(start(ServerConfig { addresses, port, token, ..Default::default() }))?;
         let hub = running.hub_arc();
         let (serial, rx) = {
             let hub = hub.clone();
@@ -94,6 +100,11 @@ impl PhoneServer {
 
     pub fn port(&self) -> u16 {
         self.running.as_ref().map(|r| r.port).unwrap_or(0)
+    }
+
+    /// The token in the QR URL.
+    pub fn token(&self) -> String {
+        self.running.as_ref().map(|r| r.token.clone()).unwrap_or_default()
     }
 
     /// The URL the QR carries for `address`.

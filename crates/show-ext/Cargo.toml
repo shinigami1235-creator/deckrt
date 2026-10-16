@@ -1,0 +1,16 @@
+[package]
+name = "deckcraft-show-ext"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "deckrt's slide show extras that need the platform: the connected displays, so the show goes to the projector and the presenter window stays on the laptop"
+
+[lints]
+workspace = true
+
+[dependencies]
+log = { workspace = true }
+
+# The connected displays through EnumDisplayMonitors, in the order winit lists them.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi"] }

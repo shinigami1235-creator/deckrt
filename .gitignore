@@ -12,3 +12,8 @@ packaging/env.sh
 /packaging/linux/flatpak/cargo-sources.json
 /build-flatpak/
 /.flatpak-builder/
+
+# deckrt: a local build copied next to the launchers by Build deckrt.bat
+/deckrt.exe
+/deckcraft-cli.exe
+/dist/

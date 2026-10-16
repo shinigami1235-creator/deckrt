@@ -26,7 +26,11 @@ deckcraft-media = { workspace = true }
 # deckrt
 deckcraft-interactive = { workspace = true }
 deckcraft-model3d = { workspace = true }
+deckcraft-phones = { workspace = true }
+deckcraft-show-ext = { workspace = true }
 egui-wgpu = { version = "0.36", optional = true }
+image = { workspace = true }
+qrcode = { version = "0.14", default-features = false }
 egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

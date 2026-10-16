@@ -1,0 +1,1404 @@
+//! The interactive objects during a slide show: their live state, how they are drawn over the
+//! slide on the audience screen and in the presenter view, the pointer and keys they take, the
+//! presenter's control rows, and which display the show goes to. The phones are in
+//! [`super::phones`].
+//!
+//! Upstream's `show.rs` calls in at a few marked points: when the show starts (displays), before
+//! the pointer is read (`pointer`), per key (`shortcut`), after the slide picture is painted
+//! (`draw_audience`), in the presenter window, and when the show ends.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use deckcraft_interactive::injection::{self, Point};
+use deckcraft_interactive::measure;
+use deckcraft_interactive::object::{self as obj, Config, InteractiveObject, Kind, PopupContent, Trigger};
+use deckcraft_interactive::state::{ObjectState, TypeState, zoom_view};
+use deckcraft_interactive::{poll, state};
+use deckcraft_model::{MediaId, Presentation, Shape, ShapeId, ShapeKind};
+use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Stroke, StrokeKind, Ui, pos2, vec2};
+
+use super::model_view::Turn;
+use super::phones::Phones;
+use crate::show::Show;
+
+/// Who is looking: the audience screen takes input only where the object allows it; the
+/// presenter's own view takes everything.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Audience,
+    Presenter,
+}
+
+pub use deckcraft_show_ext::DisplayInfo;
+
+/// A drag in progress on an object.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Drag {
+    /// Turning a model: the pointer position at the last step.
+    Model { id: u32, last: Pos2 },
+    Wipe { id: u32 },
+    Scrub { id: u32 },
+    Measure { id: u32, handle: usize },
+}
+
+/// The editor window as it was before the show moved to another display.
+#[derive(Clone, Copy, Debug)]
+pub struct SavedWindow {
+    pub pos: Pos2,
+    pub inner: egui::Vec2,
+    pub maximized: bool,
+}
+
+/// deckrt's state for one show. Lives on [`crate::show::Show`].
+pub struct Ext {
+    /// Object states by shape id. They persist across slide changes (a poll keeps its votes, a
+    /// model its turn); an unpinned injection map drops its points when its slide is left.
+    pub states: BTreeMap<u32, ObjectState>,
+    /// The slide the states were last brought up to date for.
+    slide: Option<usize>,
+    pub drag: Option<Drag>,
+    /// The object the primary button went down on, so the click fires on its release.
+    press_on: Option<u32>,
+    /// The wheel was taken by a model this frame (so the show does not turn the page).
+    pub took_scroll: bool,
+    /// The zoom region object that set the show's zoom, if any.
+    zoom_owner: Option<u32>,
+    /// A web popup opened in the browser already, so it is not opened twice.
+    opened_web: Vec<u32>,
+    pub phones: Option<Phones>,
+    /// The QR column beside the slide on the audience screen.
+    pub qr_shown: bool,
+    /// A phone's pointer, in slide units.
+    pub pointer: Option<[f32; 2]>,
+    /// Displays as listed when the show started.
+    pub displays: Vec<DisplayInfo>,
+    /// The display the audience screen is on, when there is more than one.
+    pub audience: Option<usize>,
+    /// The display the presenter window is on.
+    pub presenter_display: Option<usize>,
+    pub restore: Option<SavedWindow>,
+    /// The presenter window asked for a different display; applied once it has a position.
+    pub move_presenter: bool,
+    /// The last thing that went wrong, for the presenter window.
+    pub error: Option<String>,
+    /// The result of the last Test, for the Phones section.
+    pub last_test: Option<Result<String, String>>,
+    pub last_hotspot: Option<String>,
+    /// Models seen turning this frame (the presenter's drag or a phone's), to keep the picture
+    /// drawn at a lower cost while it moves.
+    turning: Vec<u32>,
+    /// The clock when something a phone can see last changed.
+    pub changed_at: f64,
+    /// The phone server was started (or failed) for this show.
+    pub phones_tried: bool,
+}
+
+impl Default for Ext {
+    fn default() -> Self {
+        Ext {
+            states: BTreeMap::new(),
+            slide: None,
+            drag: None,
+            press_on: None,
+            took_scroll: false,
+            zoom_owner: None,
+            opened_web: vec![],
+            phones: None,
+            qr_shown: false,
+            pointer: None,
+            displays: vec![],
+            audience: None,
+            presenter_display: None,
+            restore: None,
+            move_presenter: false,
+            error: None,
+            last_test: None,
+            last_hotspot: None,
+            turning: vec![],
+            changed_at: 0.0,
+            phones_tried: false,
+        }
+    }
+}
+
+/// Slide points to screen points through the slide's rectangle `srect` and the zoom window `uv`.
+#[derive(Clone, Copy, Debug)]
+pub struct Map {
+    pub srect: Rect,
+    pub uv: Rect,
+    pub sw: f32,
+    pub sh: f32,
+}
+
+impl Map {
+    pub fn new(srect: Rect, uv: Rect, doc: &Presentation) -> Map {
+        Map { srect, uv, sw: doc.slide_size.width.max(1.0) as f32, sh: doc.slide_size.height.max(1.0) as f32 }
+    }
+
+    pub fn to_screen(&self, x: f32, y: f32) -> Pos2 {
+        let nx = (x / self.sw - self.uv.min.x) / self.uv.width().max(1e-6);
+        let ny = (y / self.sh - self.uv.min.y) / self.uv.height().max(1e-6);
+        pos2(self.srect.min.x + nx * self.srect.width(), self.srect.min.y + ny * self.srect.height())
+    }
+
+    /// Screen point to slide units (0 to 1 across the slide).
+    pub fn to_unit(&self, p: Pos2) -> (f32, f32) {
+        let nx = (p.x - self.srect.min.x) / self.srect.width().max(1e-6);
+        let ny = (p.y - self.srect.min.y) / self.srect.height().max(1e-6);
+        (self.uv.min.x + nx * self.uv.width(), self.uv.min.y + ny * self.uv.height())
+    }
+
+    pub fn rect(&self, x: &deckcraft_geom::Xfrm) -> Rect {
+        Rect::from_min_max(self.to_screen(x.x as f32, x.y as f32), self.to_screen((x.x + x.w) as f32, (x.y + x.h) as f32))
+    }
+
+    /// A rectangle in slide units (0 to 1).
+    pub fn unit_rect(&self, x: f64, y: f64, w: f64, h: f64) -> Rect {
+        Rect::from_min_max(self.to_screen(x as f32 * self.sw, y as f32 * self.sh), self.to_screen((x + w) as f32 * self.sw, (y + h) as f32 * self.sh))
+    }
+}
+
+/// One object on the slide, with its box in slide points.
+pub struct Item {
+    pub id: u32,
+    pub shape: Shape,
+    pub obj: InteractiveObject,
+    pub xfrm: deckcraft_geom::Xfrm,
+}
+
+/// The objects on slide `idx`, in drawing order. Objects inside groups are left out.
+pub fn objects_on(doc: &Presentation, idx: usize) -> Vec<Item> {
+    let Some(slide) = doc.slides.get(idx) else { return vec![] };
+    slide
+        .shapes
+        .iter()
+        .filter(|s| !s.hidden)
+        .filter_map(|s| {
+            let o = obj::read(s)?;
+            let xfrm = s.xfrm?;
+            Some(Item { id: s.id.0, shape: s.clone(), obj: o, xfrm })
+        })
+        .collect()
+}
+
+/// The shapes the show draws itself, left out of the slide picture: a live model, and the
+/// pictures a swap, a scrub and a wipe show (drawn fitted rather than stretched), and a poll's
+/// box (drawn with its bars).
+pub fn hidden_in_show(doc: &Presentation, idx: usize) -> Vec<ShapeId> {
+    objects_on(doc, idx)
+        .into_iter()
+        .filter(|it| matches!(it.obj.kind(), Kind::Model | Kind::ImageSwap | Kind::Scrub | Kind::Wipe | Kind::Poll))
+        .map(|it| ShapeId(it.id))
+        .collect()
+}
+
+impl Ext {
+    /// Bring the states up to date for the slide the show is on.
+    pub fn sync_slide(&mut self, doc: &Presentation, idx: usize) {
+        if self.slide != Some(idx) {
+            if self.slide.is_some() {
+                state::clear_unpinned(&mut self.states);
+            }
+            self.slide = Some(idx);
+            self.drag = None;
+            self.pointer = None;
+            self.changed_at = f64::MAX;
+        }
+        for it in objects_on(doc, idx) {
+            self.states.entry(it.id).or_insert_with(|| ObjectState::initial(&it.obj));
+        }
+    }
+
+    pub fn state_of(&self, id: u32) -> Option<&ObjectState> {
+        self.states.get(&id)
+    }
+
+    /// Fire an object (its shortcut, a click, the presenter's button). Returns whether anything
+    /// changed.
+    pub(crate) fn fire(&mut self, show_zoom: &mut Option<crate::show::Zoom>, it: &Item, now: f64, ctx: &egui::Context) -> bool {
+        let Some(st) = self.states.get_mut(&it.id) else { return false };
+        let changed = st.fire(&it.obj, now);
+        match (&st.st, &it.obj.config) {
+            (TypeState::Zoom { zoomed, .. }, Config::Zoom(c)) => {
+                if *zoomed {
+                    let v = zoom_view(c.source_rect, c.max_scale, [0.0, 0.0]);
+                    *show_zoom = Some(crate::show::Zoom::region(v.cx as f32, v.cy as f32, v.scale as f32));
+                    self.zoom_owner = Some(it.id);
+                } else if self.zoom_owner == Some(it.id) {
+                    *show_zoom = None;
+                    self.zoom_owner = None;
+                }
+            }
+            (TypeState::Popup { open: true }, Config::Popup(c)) => {
+                if let PopupContent::Web { url } = &c.content
+                    && !self.opened_web.contains(&it.id)
+                    && (url.starts_with("http://") || url.starts_with("https://"))
+                {
+                    self.opened_web.push(it.id);
+                    ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
+                }
+            }
+            _ => {}
+        }
+        if changed {
+            self.changed_at = now;
+        }
+        changed
+    }
+
+    /// The show's own zoom was dismissed (a click, Esc): the zoom region follows.
+    pub(crate) fn follow_zoom(&mut self, show_zoom: &Option<crate::show::Zoom>) {
+        if show_zoom.is_none()
+            && let Some(id) = self.zoom_owner.take()
+            && let Some(ObjectState { st: TypeState::Zoom { zoomed, .. }, .. }) = self.states.get_mut(&id)
+        {
+            *zoomed = false;
+        }
+    }
+
+    pub(crate) fn reset(&mut self, it: &Item, show_zoom: &mut Option<crate::show::Zoom>) {
+        if let Some(st) = self.states.get_mut(&it.id) {
+            st.reset(&it.obj);
+        }
+        if self.zoom_owner == Some(it.id) {
+            *show_zoom = None;
+            self.zoom_owner = None;
+        }
+        self.changed_at = f64::MAX;
+    }
+
+    pub fn set_visible(&mut self, id: u32, visible: bool) {
+        if let Some(st) = self.states.get_mut(&id) {
+            st.visible = visible;
+            self.changed_at = f64::MAX;
+        }
+    }
+
+    /// The models on the slide that a phone may turn, in slide order, visible ones only.
+    pub fn models_on(&self, doc: &Presentation, idx: usize) -> Vec<Item> {
+        objects_on(doc, idx)
+            .into_iter()
+            .filter(|it| it.obj.kind() == Kind::Model && self.states.get(&it.id).is_none_or(|s| s.visible))
+            .collect()
+    }
+
+    /// The first poll on the slide.
+    pub fn poll_on(&self, doc: &Presentation, idx: usize) -> Option<Item> {
+        objects_on(doc, idx).into_iter().find(|it| it.obj.kind() == Kind::Poll)
+    }
+
+    /// Turn `id` by a drag of `dx`, `dy` fractions of its surface (deckrt's rule: 240 degrees per
+    /// width, 150 per height).
+    pub fn turn_model(&mut self, id: u32, dx: f64, dy: f64, now: f64) {
+        if let Some(ObjectState { st: TypeState::Model { turn, .. }, .. }) = self.states.get_mut(&id) {
+            turn[0] += dx * 240.0;
+            turn[1] = (turn[1] + dy * 150.0).clamp(-180.0, 180.0);
+            if !self.turning.contains(&id) {
+                self.turning.push(id);
+            }
+            self.changed_at = now;
+        }
+    }
+
+    pub fn zoom_model(&mut self, id: u32, factor: f64, now: f64) {
+        if let Some(ObjectState { st: TypeState::Model { zoom, .. }, .. }) = self.states.get_mut(&id) {
+            *zoom = (*zoom * factor).clamp(0.2, 8.0);
+            self.changed_at = now;
+        }
+    }
+
+    /// Every model on the slide sharing the dragged one's link group turns with it.
+    pub fn turn_linked(&mut self, doc: &Presentation, idx: usize, id: u32, dx: f64, dy: f64, now: f64) {
+        let items = objects_on(doc, idx);
+        let group = items.iter().find(|it| it.id == id).and_then(|it| match &it.obj.config {
+            Config::Model(c) if !c.link_group.trim().is_empty() => Some(c.link_group.clone()),
+            _ => None,
+        });
+        self.turn_model(id, dx, dy, now);
+        if let Some(g) = group {
+            for it in items {
+                if it.id != id && matches!(&it.obj.config, Config::Model(c) if c.link_group == g) {
+                    self.turn_model(it.id, dx, dy, now);
+                }
+            }
+        }
+    }
+
+    /// End of a frame.
+    pub fn end_frame(&mut self) {
+        self.turning.clear();
+        self.took_scroll = false;
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Drawing
+
+fn pill(painter: &egui::Painter, at: Pos2, align: Align2, text: &str, size: f32) -> Rect {
+    let font = FontId::proportional(size);
+    let galley = painter.layout_no_wrap(text.to_string(), font, Color32::WHITE);
+    let pad = vec2(size * 0.6, size * 0.3);
+    let box_size = galley.size() + pad * 2.0;
+    let rect = align.anchor_size(at, box_size);
+    painter.rect_filled(rect, CornerRadius::same((size * 0.4) as u8), Color32::from_rgba_unmultiplied(20, 20, 24, 215));
+    painter.galley(rect.min + pad, galley, Color32::WHITE);
+    rect
+}
+
+fn color32(hex: &str) -> Color32 {
+    let [r, g, b] = obj::parse_color(hex);
+    Color32::from_rgb(r, g, b)
+}
+
+/// Draw every object of slide `idx` over the slide picture. `role` decides what is shown:
+/// the audience never sees presenter-only chrome (nothing here is presenter-only yet; the
+/// rows live in the presenter window).
+#[allow(clippy::too_many_arguments)]
+pub fn draw(
+    ctx: &egui::Context,
+    painter: &egui::Painter,
+    map: Map,
+    doc: &Arc<Presentation>,
+    idx: usize,
+    ext: &mut Ext,
+    st: &mut super::State,
+    role: Role,
+    now: f64,
+) {
+    ext.sync_slide(doc, idx);
+    let ppp = ctx.pixels_per_point();
+    let items = objects_on(doc, idx);
+    for it in &items {
+        let Some(os) = ext.states.get(&it.id).cloned() else { continue };
+        if !os.visible {
+            continue;
+        }
+        let rect = map.rect(&it.xfrm);
+        match (&os.st, &it.obj.config) {
+            (TypeState::Model { layers, turn, zoom, .. }, Config::Model(c)) => {
+                let ShapeKind::Model3d { media, poster } = &it.shape.kind else { continue };
+                let hidden: Vec<String> = layers.iter().filter(|(_, on)| !**on).map(|(n, _)| n.clone()).collect();
+                let turning = ext.turning.contains(&it.id) || ext.drag.is_some_and(|d| matches!(d, Drag::Model { id, .. } if id == it.id));
+                let drawn = st.models.model(doc, *media).and_then(|model| {
+                    let t = Turn { turn: *turn, zoom: *zoom };
+                    let view = super::model_view::view_of(&model, c, &t);
+                    let w = (rect.width() * ppp).round().clamp(1.0, 4096.0) as u32;
+                    let h = (rect.height() * ppp).round().clamp(1.0, 4096.0) as u32;
+                    let slot = it.id as u64 | ((role == Role::Presenter) as u64) << 40;
+                    st.models.draw(ctx, &mut st.gpu, slot, *media, &model, &view, w, h, &hidden, turning)
+                });
+                match drawn {
+                    Some(d) => super::model_view::Models::paint(painter, &d, rect),
+                    None => {
+                        if let Some((tex, size)) = poster.and_then(|p| st.pictures.get(ctx, doc, p)) {
+                            let r = super::pictures::contain(rect, size[0] as f32 / size[1].max(1) as f32);
+                            painter.image(tex, r, unit(), Color32::WHITE);
+                        }
+                    }
+                }
+                if turning {
+                    ctx.request_repaint();
+                }
+            }
+            (TypeState::Swap { index, picker }, Config::ImageSwap(c)) => {
+                if let Some(m) = c.images.get(*index).or(c.images.first())
+                    && let Some((tex, size)) = st.pictures.get(ctx, doc, m.0)
+                {
+                    let r = super::pictures::contain(rect, size[0] as f32 / size[1].max(1) as f32);
+                    painter.image(tex, r, unit(), Color32::WHITE);
+                }
+                if c.images.len() > 1 {
+                    pill(painter, rect.right_bottom() - vec2(6.0, 6.0), Align2::RIGHT_BOTTOM, &format!("{} / {}", index + 1, c.images.len()), 12.0);
+                }
+                if *picker {
+                    // A strip of every picture along the bottom edge.
+                    let n = c.images.len().max(1) as f32;
+                    let th = (rect.height() * 0.18).clamp(24.0, 90.0);
+                    let strip = Rect::from_min_max(pos2(rect.min.x, rect.max.y - th), rect.max);
+                    painter.rect_filled(strip, CornerRadius::ZERO, Color32::from_black_alpha(170));
+                    let cw = strip.width() / n;
+                    for (i, m) in c.images.iter().enumerate() {
+                        let cell = Rect::from_min_size(pos2(strip.min.x + cw * i as f32, strip.min.y), vec2(cw, th)).shrink(3.0);
+                        if let Some((tex, size)) = st.pictures.get(ctx, doc, m.0) {
+                            let r = super::pictures::contain(cell, size[0] as f32 / size[1].max(1) as f32);
+                            painter.image(tex, r, unit(), Color32::WHITE);
+                        }
+                        if i == *index {
+                            painter.rect_stroke(cell, CornerRadius::ZERO, Stroke::new(2.0, Color32::WHITE), StrokeKind::Inside);
+                        }
+                    }
+                }
+            }
+            (TypeState::Wipe { position }, Config::Wipe(c)) => {
+                let p = *position as f32;
+                if let Some((tex, size)) = st.pictures.get(ctx, doc, c.after.0) {
+                    painter.image(tex, rect, super::pictures::cover_uv(rect, size[0] as f32 / size[1].max(1) as f32), Color32::WHITE);
+                }
+                let split_x = rect.min.x + rect.width() * p;
+                if let Some((tex, size)) = st.pictures.get(ctx, doc, c.before.0) {
+                    let clip = Rect::from_min_max(rect.min, pos2(split_x, rect.max.y));
+                    let sub = painter.with_clip_rect(clip);
+                    sub.image(tex, rect, super::pictures::cover_uv(rect, size[0] as f32 / size[1].max(1) as f32), Color32::WHITE);
+                }
+                painter.line_segment([pos2(split_x, rect.min.y), pos2(split_x, rect.max.y)], Stroke::new(3.0, Color32::from_black_alpha(120)));
+                painter.line_segment([pos2(split_x, rect.min.y), pos2(split_x, rect.max.y)], Stroke::new(1.5, Color32::WHITE));
+                let knob = pos2(split_x, rect.center().y);
+                painter.circle_filled(knob, 11.0, Color32::from_rgba_unmultiplied(20, 20, 24, 215));
+                painter.circle_stroke(knob, 11.0, Stroke::new(1.5, Color32::WHITE));
+                painter.text(knob, Align2::CENTER_CENTER, "⇔", FontId::proportional(13.0), Color32::WHITE);
+                painter.text(rect.left_top() + vec2(8.0, 6.0), Align2::LEFT_TOP, "Before", FontId::proportional(12.0), Color32::from_rgba_unmultiplied(255, 255, 255, 200));
+                painter.text(rect.right_top() + vec2(-8.0, 6.0), Align2::RIGHT_TOP, "After", FontId::proportional(12.0), Color32::from_rgba_unmultiplied(255, 255, 255, 200));
+            }
+            (TypeState::Scrub { index }, Config::Scrub(c)) => {
+                if let Some(m) = c.images.get(*index).or(c.images.first())
+                    && let Some((tex, size)) = st.pictures.get(ctx, doc, m.0)
+                {
+                    let r = super::pictures::contain(rect, size[0] as f32 / size[1].max(1) as f32);
+                    painter.image(tex, r, unit(), Color32::WHITE);
+                }
+                if let Some(label) = c.labels.get(*index) {
+                    pill(painter, rect.left_top() + vec2(6.0, 6.0), Align2::LEFT_TOP, label, (rect.height() * 0.06).clamp(11.0, 22.0));
+                }
+                // The tick strip along the bottom edge.
+                let n = c.images.len();
+                if n > 1 {
+                    let y = rect.max.y - 10.0;
+                    painter.line_segment([pos2(rect.min.x + 12.0, y), pos2(rect.max.x - 12.0, y)], Stroke::new(2.0, Color32::from_black_alpha(140)));
+                    for i in 0..n {
+                        let x = rect.min.x + 12.0 + (rect.width() - 24.0) * i as f32 / (n - 1) as f32;
+                        let (r, col) = if i == *index { (6.0, Color32::WHITE) } else { (4.0, Color32::from_gray(190)) };
+                        painter.circle_filled(pos2(x, y), r + 1.0, Color32::from_black_alpha(140));
+                        painter.circle_filled(pos2(x, y), r, col);
+                    }
+                }
+            }
+            (TypeState::Popup { open }, Config::Popup(c)) => {
+                if *open {
+                    let panel = map.unit_rect(c.panel_position[0], c.panel_position[1], c.panel_size[0], c.panel_size[1]);
+                    painter.rect_filled(panel.translate(vec2(4.0, 6.0)), CornerRadius::same(6), Color32::from_black_alpha(90));
+                    painter.rect_filled(panel, CornerRadius::same(6), Color32::WHITE);
+                    painter.rect_stroke(panel, CornerRadius::same(6), Stroke::new(1.0, Color32::from_gray(160)), StrokeKind::Inside);
+                    let inner = panel.shrink(panel.width().min(panel.height()) * 0.06 + 6.0);
+                    match &c.content {
+                        PopupContent::Text { text } => {
+                            let size = (map.srect.height() * 0.03).clamp(12.0, 40.0);
+                            let galley = painter.layout(text.clone(), FontId::proportional(size), Color32::from_gray(25), inner.width().max(10.0));
+                            let sub = painter.with_clip_rect(inner);
+                            sub.galley(inner.min, galley, Color32::from_gray(25));
+                        }
+                        PopupContent::Image { media } => {
+                            if let Some((tex, size)) = st.pictures.get(ctx, doc, media.0) {
+                                let r = super::pictures::contain(inner, size[0] as f32 / size[1].max(1) as f32);
+                                painter.image(tex, r, unit(), Color32::WHITE);
+                            }
+                        }
+                        PopupContent::Web { url } => {
+                            let size = (map.srect.height() * 0.025).clamp(12.0, 28.0);
+                            painter.text(inner.center(), Align2::CENTER_CENTER, format!("{url}\nopened in the browser"), FontId::proportional(size), Color32::from_gray(60));
+                        }
+                    }
+                }
+            }
+            (TypeState::Poll { open, revealed, votes }, Config::Poll(c)) => {
+                draw_poll(painter, rect, c, *open, *revealed, votes, role);
+            }
+            (TypeState::Measure { preset, handles }, Config::Measure(c)) => {
+                let col = color32(&c.color);
+                let aspect = (rect.width() / rect.height().max(1.0)) as f64;
+                let w = (c.line_width as f32 * map.srect.height() / 1080.0).max(1.0);
+                let at = |h: &measure::Handle| pos2(rect.min.x + h[0] as f32 * rect.width(), rect.min.y + h[1] as f32 * rect.height());
+                for (a, b) in measure::lines(*preset, handles) {
+                    painter.line_segment([at(&a), at(&b)], Stroke::new(w + 2.0, Color32::from_black_alpha(110)));
+                    painter.line_segment([at(&a), at(&b)], Stroke::new(w, col));
+                }
+                for h in handles {
+                    let p = at(h);
+                    painter.circle_filled(p, 7.0, Color32::from_black_alpha(120));
+                    painter.circle_filled(p, 5.5, col);
+                    painter.circle_stroke(p, 5.5, Stroke::new(1.0, Color32::WHITE));
+                }
+                let r = measure::reading(*preset, handles, aspect);
+                let text = match &r.detail {
+                    Some(d) => format!("{}  ({d})", r.text),
+                    None => r.text,
+                };
+                let size = (map.srect.height() * 0.028).clamp(12.0, 30.0);
+                let below = rect.max.y + size * 2.0 < map.srect.max.y;
+                if below {
+                    pill(painter, pos2(rect.center().x, rect.max.y + 6.0), Align2::CENTER_TOP, &text, size);
+                } else {
+                    pill(painter, pos2(rect.center().x, rect.min.y - 6.0), Align2::CENTER_BOTTOM, &text, size);
+                }
+            }
+            (TypeState::InjectionMap { points, .. }, Config::InjectionMap(c)) => {
+                let size = (map.srect.height() * 0.022).clamp(10.0, 24.0);
+                for (i, p) in points.iter().enumerate() {
+                    let at = pos2(rect.min.x + p.x as f32 * rect.width(), rect.min.y + p.y as f32 * rect.height());
+                    let prod = c.products.get(p.product);
+                    let col = prod.map(|p| color32(&p.color)).unwrap_or(Color32::LIGHT_BLUE);
+                    let r = size * 0.7;
+                    painter.circle_filled(at, r + 1.5, Color32::from_black_alpha(140));
+                    painter.circle_filled(at, r, col);
+                    painter.text(at, Align2::CENTER_CENTER, format!("{}", i + 1), FontId::proportional(size * 0.8), Color32::WHITE);
+                    let dose = injection::dose_text(p.dose, prod.map(|p| p.unit.as_str()).unwrap_or(""));
+                    pill(painter, at + vec2(r + 4.0, 0.0), Align2::LEFT_CENTER, &dose, size * 0.8);
+                }
+                if c.show_total && !points.is_empty() {
+                    pill(painter, rect.right_bottom() - vec2(6.0, 6.0), Align2::RIGHT_BOTTOM, &injection::totals_line(c, points), size);
+                }
+                if role == Role::Presenter {
+                    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)), StrokeKind::Inside);
+                }
+            }
+            (TypeState::Zoom { .. }, _) => {
+                if role == Role::Presenter {
+                    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)), StrokeKind::Inside);
+                }
+            }
+            _ => {}
+        }
+    }
+    // A phone's pointer.
+    if let Some([x, y]) = ext.pointer {
+        let p = map.to_screen(x * map.sw, y * map.sh);
+        painter.circle_filled(p, 14.0, Color32::from_rgba_unmultiplied(255, 60, 60, 80));
+        painter.circle_filled(p, 6.0, Color32::from_rgb(255, 60, 60));
+    }
+    let _ = now;
+}
+
+fn unit() -> Rect {
+    Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))
+}
+
+/// The poll panel: the question, and the answers. The room sees how many have voted while voting
+/// is open and the split only after the reveal; the presenter's own view shows the split all along.
+fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role) {
+    let counts = poll::tally(c.options.len(), votes);
+    let total: u32 = counts.iter().sum();
+    let pct = poll::percentages(&counts);
+    painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(0x1e, 0x29, 0x3b));
+    let pad = (rect.width().min(rect.height()) * 0.06).clamp(6.0, 20.0);
+    let inner = rect.shrink(pad);
+    let n = c.options.len().max(1) as f32;
+    let qsize = (inner.height() / (n + 2.5)).clamp(11.0, 30.0);
+    let asize = qsize * 0.85;
+    let q = painter.layout(c.question.clone(), FontId::proportional(qsize), Color32::WHITE, inner.width());
+    let qh = q.size().y;
+    painter.galley(inner.min, q, Color32::WHITE);
+    let status = if revealed {
+        format!("{total} vote{}", if total == 1 { "" } else { "s" })
+    } else if open {
+        format!("Voting open · {total} vote{}", if total == 1 { "" } else { "s" })
+    } else {
+        String::new()
+    };
+    let top = inner.min.y + qh + 6.0;
+    let bottom = if status.is_empty() { inner.max.y } else { inner.max.y - asize - 4.0 };
+    let row_h = ((bottom - top) / n).clamp(asize + 6.0, asize * 2.4);
+    let show_split = revealed || role == Role::Presenter;
+    for (i, opt) in c.options.iter().enumerate() {
+        let y = top + row_h * i as f32;
+        let row = Rect::from_min_max(pos2(inner.min.x, y), pos2(inner.max.x, y + row_h - 4.0));
+        let letter = (b'A' + (i % 26) as u8) as char;
+        let right = c.correct == Some(i);
+        if show_split && (open || revealed) {
+            let frac = pct.get(i).copied().unwrap_or(0) as f32 / 100.0;
+            let bar = Rect::from_min_max(row.min, pos2(row.min.x + row.width() * frac, row.max.y));
+            let col = if revealed && right { Color32::from_rgb(0x2e, 0xa0, 0x5c) } else { Color32::from_rgb(0x3b, 0x5b, 0x9a) };
+            painter.rect_filled(row, CornerRadius::same(4), Color32::from_white_alpha(14));
+            painter.rect_filled(bar, CornerRadius::same(4), col);
+            let txt = format!("{}  {}%", counts.get(i).copied().unwrap_or(0), pct.get(i).copied().unwrap_or(0));
+            painter.text(pos2(row.max.x - 6.0, row.center().y), Align2::RIGHT_CENTER, txt, FontId::proportional(asize), Color32::WHITE);
+        } else {
+            painter.rect_filled(row, CornerRadius::same(4), Color32::from_white_alpha(14));
+        }
+        let label = format!("{letter}.  {opt}");
+        let col = if revealed && right { Color32::WHITE } else if revealed { Color32::from_gray(200) } else { Color32::WHITE };
+        painter.text(pos2(row.min.x + 8.0, row.center().y), Align2::LEFT_CENTER, label, FontId::proportional(asize), col);
+        if revealed && right {
+            painter.text(pos2(row.min.x + row.width() * 0.62, row.center().y), Align2::LEFT_CENTER, "✓", FontId::proportional(asize), Color32::WHITE);
+        }
+    }
+    if !status.is_empty() {
+        painter.text(pos2(inner.min.x, inner.max.y), Align2::LEFT_BOTTOM, status, FontId::proportional(asize * 0.9), Color32::from_gray(200));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pointer input
+
+/// Whether an object takes a click or a drag from `role`.
+fn takes_input(it: &Item, role: Role) -> bool {
+    match role {
+        Role::Presenter => true,
+        // The audience screen: objects marked for it, and models, whose drag is the point of them.
+        Role::Audience => it.obj.trigger == Trigger::AudienceClick || matches!(it.obj.kind(), Kind::Model | Kind::Wipe | Kind::Scrub),
+    }
+}
+
+/// Pointer input over the objects. `resp` is a hover/drag interaction covering the slide. Returns
+/// whether the primary click (press and release) was taken by an object, so the show does not
+/// also act on it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pointer(
+    ctx: &egui::Context,
+    map: Map,
+    doc: &Arc<Presentation>,
+    idx: usize,
+    ext: &mut Ext,
+    show_zoom: &mut Option<crate::show::Zoom>,
+    role: Role,
+    now: f64,
+    hovered: bool,
+) -> bool {
+    ext.sync_slide(doc, idx);
+    let (pressed, down, released, latest, scroll) = ctx.input(|i| {
+        (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.primary_released(), i.pointer.latest_pos(), i.smooth_scroll_delta.y)
+    });
+    let items = objects_on(doc, idx);
+    // A drag in progress follows the pointer wherever it goes.
+    if let Some(d) = ext.drag {
+        if !down {
+            ext.drag = None;
+            ext.press_on = None;
+            return released;
+        }
+        let Some(p) = latest else { return true };
+        match d {
+            Drag::Model { id, last } => {
+                if let Some(it) = items.iter().find(|it| it.id == id) {
+                    let rect = map.rect(&it.xfrm);
+                    let dx = (p.x - last.x) / rect.width().max(1.0);
+                    let dy = (p.y - last.y) / rect.height().max(1.0);
+                    if dx != 0.0 || dy != 0.0 {
+                        ext.turn_linked(doc, idx, id, dx as f64, dy as f64, now);
+                    }
+                    ext.drag = Some(Drag::Model { id, last: p });
+                }
+            }
+            Drag::Wipe { id } => {
+                if let Some(it) = items.iter().find(|it| it.id == id) {
+                    let rect = map.rect(&it.xfrm);
+                    let pos = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
+                    if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&id) {
+                        *position = pos;
+                        ext.changed_at = now;
+                    }
+                }
+            }
+            Drag::Scrub { id } => {
+                if let Some(it) = items.iter().find(|it| it.id == id)
+                    && let Config::Scrub(c) = &it.obj.config
+                {
+                    let rect = map.rect(&it.xfrm);
+                    let n = c.images.len();
+                    if n > 1 {
+                        let f = ((p.x - rect.min.x - 12.0) / (rect.width() - 24.0).max(1.0)).clamp(0.0, 1.0);
+                        let i = (f * (n - 1) as f32).round() as usize;
+                        if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&id)
+                            && *index != i
+                        {
+                            *index = i;
+                            ext.changed_at = now;
+                        }
+                    }
+                }
+            }
+            Drag::Measure { id, handle } => {
+                if let Some(it) = items.iter().find(|it| it.id == id) {
+                    let rect = map.rect(&it.xfrm);
+                    let to = [((p.x - rect.min.x) / rect.width().max(1.0)) as f64, ((p.y - rect.min.y) / rect.height().max(1.0)) as f64];
+                    if let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&id) {
+                        *handles = measure::move_handle(*preset, handles, handle, to);
+                        ext.changed_at = now;
+                    }
+                }
+            }
+        }
+        ctx.request_repaint();
+        return true;
+    }
+    if !hovered {
+        return false;
+    }
+    let Some(p) = latest else { return false };
+    // Topmost object under the pointer that takes input.
+    let under = items.iter().rev().find(|it| takes_input(it, role) && ext.states.get(&it.id).is_none_or(|s| s.visible) && map.rect(&it.xfrm).contains(p));
+    let Some(it) = under else { return false };
+    let rect = map.rect(&it.xfrm);
+    // The wheel zooms a model.
+    if scroll.abs() > 0.0 && it.obj.kind() == Kind::Model {
+        ext.zoom_model(it.id, 1.0 + scroll as f64 / 300.0, now);
+        ext.took_scroll = true;
+        ctx.request_repaint();
+    }
+    match it.obj.kind() {
+        Kind::Model | Kind::Wipe => ctx.set_cursor_icon(egui::CursorIcon::Grab),
+        Kind::Measure => ctx.set_cursor_icon(egui::CursorIcon::Grab),
+        _ => ctx.set_cursor_icon(egui::CursorIcon::PointingHand),
+    }
+    // A click fires on the release that follows a press on the same object, so the release is
+    // taken too and the show does not turn the page on it. Drags start on the press.
+    let clicked = released && ext.press_on == Some(it.id);
+    if pressed {
+        ext.press_on = Some(it.id);
+    }
+    if released {
+        ext.press_on = None;
+    }
+    if !pressed && !clicked {
+        return false;
+    }
+    match (&it.obj.config, ext.states.get(&it.id).map(|s| s.st.clone())) {
+        (Config::Model(_), _) => {
+            if pressed {
+                ext.drag = Some(Drag::Model { id: it.id, last: p });
+            }
+            true
+        }
+        (Config::Wipe(_), _) if clicked => true,
+        (Config::Wipe(_), _) => {
+            ext.drag = Some(Drag::Wipe { id: it.id });
+            // The first press already moves the divider.
+            let pos = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
+            if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.id) {
+                *position = pos;
+                ext.changed_at = now;
+            }
+            true
+        }
+        (Config::Scrub(c), _) => {
+            // On the tick strip: scrub (from the press); elsewhere: the next photograph (on the click).
+            if p.y >= rect.max.y - 22.0 && c.images.len() > 1 {
+                if clicked {
+                    return true;
+                }
+                ext.drag = Some(Drag::Scrub { id: it.id });
+                let f = ((p.x - rect.min.x - 12.0) / (rect.width() - 24.0).max(1.0)).clamp(0.0, 1.0);
+                let i = (f * (c.images.len() - 1) as f32).round() as usize;
+                if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id) {
+                    *index = i;
+                    ext.changed_at = now;
+                }
+            } else if clicked {
+                ext.fire(show_zoom, it, now, ctx);
+            }
+            true
+        }
+        (Config::Measure(_), Some(TypeState::Measure { handles, .. })) => {
+            if clicked {
+                return false;
+            }
+            let at = |h: &measure::Handle| pos2(rect.min.x + h[0] as f32 * rect.width(), rect.min.y + h[1] as f32 * rect.height());
+            let best = handles.iter().enumerate().map(|(i, h)| (i, at(h).distance(p))).min_by(|a, b| a.1.total_cmp(&b.1));
+            match best {
+                Some((i, d)) if d <= 18.0 => {
+                    ext.drag = Some(Drag::Measure { id: it.id, handle: i });
+                    true
+                }
+                _ => false,
+            }
+        }
+        (Config::InjectionMap(_), Some(TypeState::InjectionMap { .. })) => {
+            // Only the presenter places points: a point carries a product and a dose chosen in
+            // the presenter's row.
+            if role != Role::Presenter || !clicked {
+                return role == Role::Presenter;
+            }
+            let x = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
+            let y = ((p.y - rect.min.y) / rect.height().max(1.0)).clamp(0.0, 1.0) as f64;
+            if let Some(ObjectState { st: TypeState::InjectionMap { points, product, dose, .. }, .. }) = ext.states.get_mut(&it.id) {
+                points.push(Point { x, y, product: *product, dose: *dose });
+                ext.changed_at = now;
+            }
+            true
+        }
+        (Config::ImageSwap(c), Some(TypeState::Swap { picker: true, .. })) => {
+            if !clicked {
+                return true;
+            }
+            // A click on the strip picks that picture; elsewhere closes the strip.
+            let th = (rect.height() * 0.18).clamp(24.0, 90.0);
+            if p.y >= rect.max.y - th && !c.images.is_empty() {
+                let i = (((p.x - rect.min.x) / rect.width().max(1.0)) * c.images.len() as f32).floor().clamp(0.0, c.images.len() as f32 - 1.0) as usize;
+                if let Some(ObjectState { st: TypeState::Swap { index, picker }, .. }) = ext.states.get_mut(&it.id) {
+                    *index = i;
+                    *picker = false;
+                    ext.changed_at = now;
+                }
+            } else {
+                ext.fire(show_zoom, it, now, ctx);
+            }
+            true
+        }
+        (Config::ImageSwap(_) | Config::Zoom(_) | Config::Popup(_), _) => {
+            if clicked {
+                ext.fire(show_zoom, it, now, ctx);
+            }
+            true
+        }
+        (Config::Poll(_), _) => {
+            // The presenter opens and closes voting from the row; a click on the box does nothing.
+            role == Role::Presenter
+        }
+        _ => false,
+    }
+}
+
+/// An object's shortcut key, pressed in either window. Returns whether a key was taken.
+pub(crate) fn shortcut(ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>, doc: &Presentation, idx: usize, key: egui::Key, mods: egui::Modifiers, now: f64, ctx: &egui::Context) -> bool {
+    if mods.command || mods.ctrl || mods.alt {
+        return false;
+    }
+    let name = key.name();
+    let mut chars = name.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else { return false };
+    let c = c.to_ascii_lowercase();
+    ext.sync_slide(doc, idx);
+    let mut taken = false;
+    for it in objects_on(doc, idx) {
+        if it.obj.shortcut.is_some_and(|s| s.to_ascii_lowercase() == c) {
+            ext.fire(show_zoom, &it, now, ctx);
+            taken = true;
+        }
+    }
+    taken
+}
+
+// ---------------------------------------------------------------------------------------------
+// The presenter's control rows
+
+fn row_button(ui: &mut Ui, text: &str, on: bool) -> egui::Response {
+    let fill = if on { Color32::from_rgb(0x3b, 0x5b, 0x9a) } else { Color32::from_gray(60) };
+    ui.add(egui::Button::new(egui::RichText::new(text).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)))
+}
+
+fn dim(ui: &mut Ui, text: &str) {
+    ui.label(egui::RichText::new(text).size(12.0).color(Color32::from_gray(170)));
+}
+
+/// One row per object on the current slide, in the presenter window. `go_to` receives a slide
+/// index when the presenter follows a poll's winning answer.
+pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>, doc: &Arc<Presentation>, idx: usize, now: f64, go_to: &mut Option<usize>) {
+    ext.sync_slide(doc, idx);
+    let items = objects_on(doc, idx);
+    if items.is_empty() {
+        return;
+    }
+    for it in &items {
+        let Some(os) = ext.states.get(&it.id).cloned() else { continue };
+        let label = it.obj.display_label();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(&label).size(13.0).color(Color32::WHITE).strong());
+            if let Some(k) = it.obj.shortcut {
+                dim(ui, &format!("key {}", k.to_ascii_uppercase()));
+            }
+            if row_button(ui, if os.visible { "Hide" } else { "Show" }, false).clicked() {
+                ext.set_visible(it.id, !os.visible);
+            }
+            match (&os.st, &it.obj.config) {
+                (TypeState::Model { layers, .. }, Config::Model(_)) => {
+                    for (name, on) in layers {
+                        if row_button(ui, name, *on).clicked()
+                            && let Some(ObjectState { st: TypeState::Model { layers, .. }, .. }) = ext.states.get_mut(&it.id)
+                        {
+                            layers.insert(name.clone(), !on);
+                            ext.changed_at = now;
+                        }
+                    }
+                    if row_button(ui, "Reset view", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                    dim(ui, "Drag the model on the slide to turn it; the wheel zooms.");
+                }
+                (TypeState::Swap { index, .. }, Config::ImageSwap(c)) => {
+                    if row_button(ui, "Next", false).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
+                    }
+                    dim(ui, &format!("{} of {}", index + 1, c.images.len()));
+                    if row_button(ui, "First", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                }
+                (TypeState::Wipe { position }, Config::Wipe(_)) => {
+                    let mut v = *position as f32;
+                    if ui.add(egui::Slider::new(&mut v, 0.0..=1.0).show_value(false)).changed()
+                        && let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *position = v as f64;
+                        ext.changed_at = now;
+                    }
+                    if row_button(ui, "Reset", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                }
+                (TypeState::Zoom { zoomed, .. }, Config::Zoom(_)) => {
+                    if row_button(ui, if *zoomed { "Zoom out" } else { "Zoom in" }, *zoomed).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
+                    }
+                }
+                (TypeState::Popup { open }, Config::Popup(_)) => {
+                    if row_button(ui, if *open { "Close" } else { "Open" }, *open).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
+                    }
+                }
+                (TypeState::Poll { open, revealed, votes }, Config::Poll(c)) => {
+                    let counts = poll::tally(c.options.len(), votes);
+                    if !*revealed {
+                        if row_button(ui, if *open { "Close voting" } else { "Open voting" }, *open).clicked() {
+                            ext.fire(show_zoom, it, now, ui.ctx());
+                        }
+                    }
+                    if c.reveal_correct && c.correct.is_some() && !*revealed && row_button(ui, "Reveal answer", false).clicked() {
+                        if let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id) {
+                            *open = false;
+                            *revealed = true;
+                            ext.changed_at = now;
+                        }
+                    }
+                    if (c.correct.is_none() || !c.reveal_correct) && !*revealed && !votes.is_empty() && row_button(ui, "Show the split", false).clicked() {
+                        if let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id) {
+                            *open = false;
+                            *revealed = true;
+                            ext.changed_at = now;
+                        }
+                    }
+                    let tally: Vec<String> = c.options.iter().zip(counts.iter()).map(|(o, n)| format!("{o} {n}")).collect();
+                    dim(ui, &tally.join(" · "));
+                    if row_button(ui, "Reset", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                    // After the reveal: the winner's slide is offered, never taken on its own.
+                    match poll::branch(c, &counts, *revealed, doc) {
+                        poll::Branch::Winner(o) => {
+                            if o.has_target {
+                                match o.slide {
+                                    Some(s) => {
+                                        if row_button(ui, &poll::go_to_label(s), true).clicked() {
+                                            *go_to = Some(s);
+                                        }
+                                    }
+                                    None => dim(ui, &format!("{}: its slide is no longer in the deck", o.label)),
+                                }
+                            }
+                        }
+                        poll::Branch::Tie(offers) => {
+                            dim(ui, &format!("Tie between {}", offers.iter().map(|o| o.label.as_str()).collect::<Vec<_>>().join(" and ")));
+                            for o in offers {
+                                match (o.has_target, o.slide) {
+                                    (true, Some(s)) => {
+                                        if row_button(ui, &format!("{}: go to slide {}", o.label, s + 1), true).clicked() {
+                                            *go_to = Some(s);
+                                        }
+                                    }
+                                    (true, None) => dim(ui, &format!("{}: its slide is no longer in the deck", o.label)),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        poll::Branch::None => {}
+                    }
+                }
+                (TypeState::Scrub { index }, Config::Scrub(c)) => {
+                    let n = c.images.len();
+                    let mut v = *index as f32;
+                    if n > 1 && ui.add(egui::Slider::new(&mut v, 0.0..=(n - 1) as f32).step_by(1.0).show_value(false)).changed() {
+                        if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id) {
+                            *index = (v.round() as usize).min(n.saturating_sub(1));
+                            ext.changed_at = now;
+                        }
+                    }
+                    dim(ui, c.labels.get(*index).map(String::as_str).unwrap_or(""));
+                    if row_button(ui, "Next", false).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
+                    }
+                }
+                (TypeState::Measure { preset, handles }, Config::Measure(c)) => {
+                    for p in measure::Preset::ALL {
+                        if row_button(ui, p.label(), *preset == p).clicked()
+                            && let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&it.id)
+                        {
+                            // A preset button starts that measurement with fresh handles, the
+                            // active one included.
+                            *preset = p;
+                            *handles = measure::default_handles(p);
+                            ext.changed_at = now;
+                        }
+                    }
+                    let aspect = (it.xfrm.w / it.xfrm.h.max(1e-6)) as f64;
+                    let r = measure::reading(*preset, handles, aspect);
+                    dim(ui, &r.text);
+                    if row_button(ui, "Reset", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                    let _ = c;
+                }
+                (TypeState::InjectionMap { points, product, dose, pinned }, Config::InjectionMap(c)) => {
+                    for (i, p) in c.products.iter().enumerate() {
+                        let (r, g, b) = {
+                            let v = obj::parse_color(&p.color);
+                            (v[0], v[1], v[2])
+                        };
+                        let fill = if *product == i { Color32::from_rgb(r, g, b) } else { Color32::from_gray(60) };
+                        let btn = ui.add(egui::Button::new(egui::RichText::new(&p.name).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)));
+                        if btn.clicked()
+                            && let Some(ObjectState { st: TypeState::InjectionMap { product, dose, .. }, .. }) = ext.states.get_mut(&it.id)
+                        {
+                            *product = i;
+                            *dose = p.default_dose;
+                        }
+                    }
+                    let mut d = *dose;
+                    let unit = c.products.get(*product).map(|p| p.unit.as_str()).unwrap_or("");
+                    if ui.add(egui::DragValue::new(&mut d).speed(0.1).range(0.0..=1000.0).max_decimals(2).suffix(format!(" {unit}"))).changed()
+                        && let Some(ObjectState { st: TypeState::InjectionMap { dose, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *dose = d;
+                    }
+                    if row_button(ui, "Undo last", false).clicked()
+                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        points.pop();
+                        ext.changed_at = now;
+                    }
+                    if row_button(ui, "Clear", false).clicked()
+                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        points.clear();
+                        ext.changed_at = now;
+                    }
+                    let mut pin = *pinned;
+                    if ui.checkbox(&mut pin, egui::RichText::new("Pin").color(Color32::WHITE)).on_hover_text("Keep the points when the slide changes").changed()
+                        && let Some(ObjectState { st: TypeState::InjectionMap { pinned, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *pinned = pin;
+                    }
+                    let line = injection::totals_line(c, points);
+                    dim(ui, if line.is_empty() { "No points yet. Click the slide picture to place one." } else { &line });
+                }
+                _ => {}
+            }
+        });
+        ui.add_space(2.0);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Displays
+
+use deckcraft_show_ext::{presenter_frame as frame_of, split};
+
+/// The presenter window frame covering `display`, in egui points.
+pub fn presenter_frame(display: &DisplayInfo) -> Option<(Pos2, egui::Vec2)> {
+    frame_of(display).map(|f| (pos2(f[0], f[1]), vec2(f[2], f[3])))
+}
+
+/// When the show starts: on two displays the audience screen goes borderless-fullscreen on the
+/// one that is not the primary and the presenter window to the primary; otherwise full screen
+/// where the window is.
+pub fn place_show(ctx: &egui::Context, show: &mut Show, displays: Vec<DisplayInfo>) {
+    show.ext.displays = displays;
+    match split(&show.ext.displays) {
+        Some((audience, presenter)) if show.presenter => {
+            log::info!("deckrt: audience screen on display {}, presenter view on display {}", audience + 1, presenter + 1);
+            show.ext.audience = Some(audience);
+            show.ext.presenter_display = Some(presenter);
+            show.ext.restore = ctx.input(|i| {
+                let v = i.viewport();
+                let outer = v.outer_rect?;
+                let inner = v.inner_rect.map(|r| r.size()).unwrap_or_else(|| outer.size());
+                Some(SavedWindow { pos: outer.min, inner, maximized: v.maximized.unwrap_or(false) })
+            });
+            ctx.send_viewport_cmd(egui::ViewportCommand::SetMonitor(audience));
+        }
+        _ => ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true)),
+    }
+}
+
+/// When the show ends: the editor window goes back where it was.
+pub fn restore_window(ctx: &egui::Context, show: &mut Show) {
+    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+    if let Some(saved) = show.ext.restore.take() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(saved.pos));
+        if saved.maximized {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        } else if saved.inner.x > 1.0 && saved.inner.y > 1.0 && saved.inner.is_finite() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(saved.inner));
+        }
+    }
+}
+
+/// Move the audience screen to display `index` (the presenter picked one, or pressed Swap).
+pub fn set_audience_display(ctx: &egui::Context, show: &mut Show, index: usize) {
+    if show.ext.audience == Some(index) {
+        return;
+    }
+    let was_presenter = show.ext.presenter_display;
+    show.ext.audience = Some(index);
+    if was_presenter == Some(index) {
+        // Swap: the presenter window takes the display the audience screen leaves.
+        show.ext.presenter_display = show.ext.displays.iter().map(|d| d.index).find(|i| *i != index);
+        show.ext.move_presenter = true;
+    }
+    ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::SetMonitor(index));
+}
+
+/// The presenter window's builder: on its own display when the show is split.
+pub fn presenter_builder(show: &Show) -> egui::ViewportBuilder {
+    let mut b = egui::ViewportBuilder::default().with_title("Presenter View — deckrt").with_inner_size([1100.0, 700.0]);
+    if let Some(d) = show.ext.presenter_display.and_then(|i| show.ext.displays.iter().find(|d| d.index == i))
+        && let Some((pos, size)) = presenter_frame(d)
+    {
+        b = b.with_position(pos).with_inner_size(size).with_maximized(true);
+    }
+    b
+}
+
+/// The display picker and Swap in the presenter window's toolbar.
+pub fn presenter_toolbar(ui: &mut Ui, show: &mut Show) {
+    if show.ext.displays.len() < 2 {
+        return;
+    }
+    let ctx = ui.ctx().clone();
+    ui.separator();
+    dim(ui, "Audience on");
+    let current = show.ext.audience.unwrap_or(0);
+    let labels: Vec<(usize, String)> = show.ext.displays.iter().map(|d| (d.index, d.label())).collect();
+    let cur_label = labels.iter().find(|(i, _)| *i == current).map(|(_, l)| l.clone()).unwrap_or_default();
+    let mut chosen = None;
+    egui::ComboBox::from_id_salt("deckrt-audience-display").selected_text(cur_label).show_ui(ui, |ui| {
+        for (i, l) in &labels {
+            if ui.selectable_label(*i == current, l).clicked() {
+                chosen = Some(*i);
+            }
+        }
+    });
+    if let Some(i) = chosen {
+        set_audience_display(&ctx, show, i);
+    }
+    if row_button(ui, "Swap", false).on_hover_text("Exchange the audience screen and the presenter window").clicked()
+        && let Some(other) = show.ext.presenter_display
+    {
+        set_audience_display(&ctx, show, other);
+    }
+}
+
+/// The presenter window asked to move: once per request, from inside the presenter viewport.
+pub fn move_presenter_if_asked(ui: &Ui, show: &mut Show) {
+    if !show.ext.move_presenter {
+        return;
+    }
+    show.ext.move_presenter = false;
+    if let Some(d) = show.ext.presenter_display.and_then(|i| show.ext.displays.iter().find(|d| d.index == i))
+        && let Some((pos, size)) = presenter_frame(d)
+    {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+    }
+}
+
+/// Media a show draws that the slide picture leaves out: for the poster fallback and the phones'
+/// pictures.
+pub fn poster_of(sh: &Shape) -> Option<MediaId> {
+    match &sh.kind {
+        ShapeKind::Model3d { poster, .. } => *poster,
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_map_goes_both_ways() {
+        let mut doc = Presentation::default();
+        doc.slide_size = deckcraft_geom::Size::new(960.0, 540.0);
+        let m = Map::new(Rect::from_min_size(pos2(100.0, 50.0), vec2(960.0, 540.0)), unit(), &doc);
+        let p = m.to_screen(480.0, 270.0);
+        assert_eq!(p, pos2(580.0, 320.0));
+        let (x, y) = m.to_unit(p);
+        assert!((x - 0.5).abs() < 1e-6 && (y - 0.5).abs() < 1e-6);
+        let z = Map::new(m.srect, Rect::from_min_size(pos2(0.5, 0.5), vec2(0.5, 0.5)), &doc);
+        assert_eq!(z.to_screen(480.0, 270.0), pos2(100.0, 50.0));
+    }
+
+    #[test]
+    fn shortcuts_fire_the_object_with_that_key() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"shortcut": "p"}})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        assert!(shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::NONE, 0.0, &ctx));
+        let open = ext.states.values().any(|s| matches!(s.st, TypeState::Popup { open: true }));
+        assert!(open);
+        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::Q, egui::Modifiers::NONE, 0.0, &ctx));
+        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::COMMAND, 0.0, &ctx));
+    }
+
+    #[test]
+    fn a_zoom_region_sets_the_shows_zoom_and_follows_its_dismissal() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "zoom", "rect": [240.0, 135.0, 480.0, 270.0]})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        ext.sync_slide(&doc, 1);
+        let it = objects_on(&doc, 1).pop().expect("the zoom");
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        assert!(ext.fire(&mut zoom, &it, 0.0, &ctx));
+        assert!(zoom.is_some());
+        zoom = None;
+        ext.follow_zoom(&zoom);
+        assert!(matches!(ext.states[&it.id].st, TypeState::Zoom { zoomed: false, .. }));
+    }
+
+    #[test]
+    fn an_unpinned_injection_map_drops_its_points_on_the_next_slide() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "injection_map"})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        ext.sync_slide(&doc, 1);
+        let id = objects_on(&doc, 1).pop().expect("the map").id;
+        if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&id) {
+            points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0 });
+        }
+        ext.sync_slide(&doc, 0);
+        ext.sync_slide(&doc, 1);
+        assert!(matches!(&ext.states[&id].st, TypeState::InjectionMap { points, .. } if points.is_empty()));
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Glue called from upstream's `show.rs`
+
+use crate::SlideApp;
+
+/// Once a frame, after the keys: the states follow the slide, the show's own zoom is followed,
+/// the phones are served and sent a live picture when something they can see changed.
+pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc<Presentation>, now: f64) {
+    let idx = show.state.slide;
+    show.ext.sync_slide(doc, idx);
+    show.ext.follow_zoom(&show.zoom);
+    if show.presenter && !show.reading && !show.preview_only && show.ext.phones.is_none() && !show.ext.phones_tried {
+        show.ext.phones_tried = true;
+        let deck_path = app.session.active().and_then(|d| d.path.clone()).map(std::path::PathBuf::from);
+        let mut phones = Phones::start(deck_path, None);
+        phones.prepare_slides(doc);
+        if let super::phones::Status::Failed(e) = &phones.status {
+            show.ext.error = Some(format!("The phone server did not start: {e}"));
+        }
+        show.ext.phones = Some(phones);
+    }
+    let blackout = show.blank.is_some();
+    let Ext { phones, states, pointer, changed_at, .. } = &mut show.ext;
+    if let Some(ph) = phones.as_mut()
+        && ph.logic(states, doc, idx, pointer, changed_at, now, blackout)
+    {
+        ctx.request_repaint();
+    }
+    if show.ext.phones.as_ref().is_some_and(|p| p.running()) {
+        let mut phones = show.ext.phones.take();
+        if let Some(ph) = phones.as_mut() {
+            ph.live_frame(&show.ext, doc, idx, &mut app.deckrt.models, now);
+        }
+        show.ext.phones = phones;
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+    }
+}
+
+/// The audience screen's pointer, before the show acts on a click. Returns whether an object
+/// took the click.
+pub fn audience_pointer(show: &mut Show, ctx: &egui::Context, srect: Rect, doc: &Arc<Presentation>, now: f64) -> bool {
+    if show.grid || show.ended || show.blank.is_some() || show.pen {
+        return false;
+    }
+    let hovered = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| srect.contains(p));
+    let map = Map::new(srect, show.zoom_uv(), doc);
+    let idx = show.state.slide;
+    pointer(ctx, map, doc, idx, &mut show.ext, &mut show.zoom, Role::Audience, now, hovered)
+}
+
+/// The objects over the slide picture on the audience screen.
+pub fn draw_audience(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, painter: &egui::Painter, srect: Rect, doc: &Arc<Presentation>, now: f64) {
+    let map = Map::new(srect, show.zoom_uv(), doc);
+    let idx = show.state.slide;
+    draw(ctx, painter, map, doc, idx, &mut show.ext, &mut app.deckrt, Role::Audience, now);
+}
+
+/// Width of the QR column beside the slide, when the QR is shown to the audience.
+pub fn audience_avail(show: &Show, avail: Rect) -> Rect {
+    if !show.ext.qr_shown || !show.ext.phones.as_ref().is_some_and(|p| p.running()) {
+        return avail;
+    }
+    let w = (avail.width() * 0.26).clamp(180.0, 560.0);
+    Rect::from_min_max(avail.min, pos2(avail.max.x - w, avail.max.y))
+}
+
+/// The QR column: the code large enough to scan from the back of a room, the address under it.
+pub fn draw_qr(show: &Show, painter: &egui::Painter, full: Rect, srect: Rect) {
+    if !show.ext.qr_shown {
+        return;
+    }
+    let Some(ph) = show.ext.phones.as_ref().filter(|p| p.running()) else { return };
+    let col = Rect::from_min_max(pos2(srect.max.x + 12.0, full.min.y), full.max);
+    if col.width() < 60.0 {
+        return;
+    }
+    let side = (col.width() - 24.0).min(col.height() - 80.0).max(40.0);
+    let qr = Rect::from_center_size(pos2(col.center().x, col.center().y - 24.0), vec2(side, side));
+    super::phones::paint_qr(painter, qr, &ph.url);
+    painter.text(pos2(col.center().x, qr.max.y + 12.0), Align2::CENTER_TOP, "Scan to join", FontId::proportional(22.0), Color32::WHITE);
+    painter.text(pos2(col.center().x, qr.max.y + 42.0), Align2::CENTER_TOP, ph.url.clone(), FontId::proportional(15.0), Color32::from_gray(200));
+}
+
+/// The end of the show: the phones are told and the results written, the pictures dropped.
+pub fn end_show(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
+    if let Some(ph) = show.ext.phones.take() {
+        ph.stop(&show.ext.states, doc);
+    }
+    app.deckrt.pictures.clear();
+}
+
+/// In the presenter window: the objects over the current slide's picture (taking the presenter's
+/// clicks and drags) and one control row per object under it. `go_to` is set when the presenter
+/// follows a poll's winning answer.
+#[allow(clippy::too_many_arguments)]
+pub fn presenter_slide(ui: &mut Ui, show: &mut Show, doc: &Arc<Presentation>, deckrt: &mut super::State, cr: Rect, rows: Rect, now: f64, go_to: &mut Option<usize>) {
+    let idx = show.state.slide;
+    let map = Map::new(cr, show.zoom_uv(), doc);
+    let hovered = ui.rect_contains_pointer(cr);
+    if !show.zoom_arm && !show.grid {
+        let _ = ui.interact(cr, ui.id().with("deckrt-presenter-slide"), egui::Sense::click_and_drag());
+        pointer(ui.ctx(), map, doc, idx, &mut show.ext, &mut show.zoom, Role::Presenter, now, hovered);
+    }
+    draw(ui.ctx(), ui.painter(), map, doc, idx, &mut show.ext, deckrt, Role::Presenter, now);
+    if rows.height() < 20.0 {
+        return;
+    }
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rows));
+    egui::ScrollArea::vertical().id_salt("deckrt-rows").show(&mut child, |ui| {
+        if let Some(e) = &show.ext.error {
+            dim(ui, e);
+        }
+        presenter_rows(ui, &mut show.ext, &mut show.zoom, doc, idx, now, go_to);
+    });
+}
+
+/// The Phones section in the presenter window's right column. Returns the height it used.
+pub fn presenter_phones(ui: &mut Ui, show: &mut Show, rect: Rect) -> f32 {
+    if !show.presenter || show.reading {
+        return 0.0;
+    }
+    super::phones::section(ui, &mut show.ext, rect) + 8.0
+}

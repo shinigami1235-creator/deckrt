@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 deckcraft-engine = { workspace = true }
 deckcraft-ui-egui = { workspace = true, features = ["gpu3d"] }
+deckcraft-show-ext = { workspace = true } # deckrt
 deckcraft-media = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
 egui = { workspace = true }
@@ -35,3 +36,4 @@ cpal = "0.16"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }
+
