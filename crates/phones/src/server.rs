@@ -765,7 +765,9 @@ mod tests {
         let blocker = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let busy = blocker.local_addr().unwrap().port();
         let (port, listeners) = bind_all(&[IpAddr::V4(Ipv4Addr::LOCALHOST)], busy).await.unwrap();
-        assert_eq!(port, busy + 1);
+        // Windows hands out ephemeral ports in sequence, so another test may hold busy + 1 too:
+        // the next free one after it is right, not busy + 1 exactly.
+        assert!(port > busy && port < busy + PORT_ATTEMPTS, "{port} after {busy}");
         assert_eq!(listeners.len(), 1);
     }
 

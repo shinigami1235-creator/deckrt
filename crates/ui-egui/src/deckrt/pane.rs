@@ -4,7 +4,7 @@
 use deckcraft_interactive::measure::Preset;
 use deckcraft_interactive::object::{self as obj, Anchor, Config, InteractiveObject, Kind, MediaRef, PopupContent, Product, Trigger};
 use deckcraft_model::{MediaId, ShapeId};
-use egui::{RichText, Ui};
+use egui::{Color32, RichText, Ui};
 use serde_json::json;
 
 use super::model_view;
@@ -122,7 +122,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 _ => "missing file".into(),
             };
             ui.horizontal(|ui| {
-                ui.label(file);
+                ui.scope(|ui| {
+                    ui.set_max_width((ui.available_width() - 110.0).max(40.0));
+                    ui.add(egui::Label::new(file).truncate());
+                });
                 if ui.button("Replace file…").clicked() {
                     app.deckrt.picking = true;
                     let path = app.services.pick_open.as_mut().and_then(|p| p("model"));
@@ -161,7 +164,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             for (i, m) in list.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}.", i + 1));
-                    ui.add(egui::Label::new(media_name(app, m.0)).truncate());
+                    // The buttons first, from the right; the name takes what is left.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add_enabled(n > 1, egui::Button::new("Remove")).clicked() {
                             run(app, "interactive.removeImage", json!({"id": id, "index": i}));
@@ -174,6 +177,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             c.images.swap(i, i - 1);
                             changed = true;
                         }
+                        ui.add(egui::Label::new(media_name(app, m.0)).truncate());
                     });
                 });
             }
@@ -202,7 +206,6 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             changed = true;
                         }
                     });
-                    ui.add(egui::Label::new(media_name(app, m.0)).truncate());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add_enabled(n > 2, egui::Button::new("Remove")).clicked() {
                             run(app, "interactive.removeImage", json!({"id": id, "index": i}));
@@ -221,6 +224,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             }
                             changed = true;
                         }
+                        ui.add(egui::Label::new(media_name(app, m.0)).truncate());
                     });
                 });
             }
@@ -234,7 +238,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             for (slot, name, m) in [("before", "Before image", c.before), ("after", "After image", c.after)] {
                 label(ui, name);
                 ui.horizontal(|ui| {
-                    ui.add(egui::Label::new(media_name(app, m.0)).truncate());
+                    ui.scope(|ui| {
+                        ui.set_max_width((ui.available_width() - 110.0).max(40.0));
+                        ui.add(egui::Label::new(media_name(app, m.0)).truncate());
+                    });
                     if ui.button("Replace file…").clicked()
                         && let Some(path) = pick_pictures(app, false).into_iter().next()
                     {
@@ -250,7 +257,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 PopupContent::Image { .. } => 1,
                 PopupContent::Web { .. } => 2,
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["Text", "Picture", "Web page"].iter().enumerate() {
                     if ui.selectable_label(kind_now == i, *name).clicked() && kind_now != i {
                         c.content = match i {
@@ -271,7 +278,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 }
                 PopupContent::Image { media } => {
                     ui.horizontal(|ui| {
-                        ui.add(egui::Label::new(if media.0 == MediaId(0) { "No picture yet".to_string() } else { media_name(app, media.0) }).truncate());
+                        ui.scope(|ui| {
+                            ui.set_max_width((ui.available_width() - 130.0).max(40.0));
+                            ui.add(egui::Label::new(if media.0 == MediaId(0) { "No picture yet".to_string() } else { media_name(app, media.0) }).truncate());
+                        });
                         if ui.button("Choose picture…").clicked()
                             && let Some(path) = pick_pictures(app, false).into_iter().next()
                         {
@@ -292,7 +302,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             label(ui, "Region");
             hint(ui, "The part of the slide that fills the screen, in slide units 0 to 1.");
             let mut r = c.source_rect;
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
                     let resp = ui.add(egui::DragValue::new(&mut r[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
@@ -323,8 +333,11 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             let n = c.options.len();
             for i in 0..n {
                 ui.horizontal(|ui| {
-                    let mut right = c.correct == Some(i);
-                    if ui.radio_value(&mut right, true, "").on_hover_text("The right answer").clicked() {
+                    // The tick marks the right answer; a dim one is the button to make it so.
+                    let right = c.correct == Some(i);
+                    let tick = RichText::new("✓").color(if right { t.accent_text } else { t.text_dim });
+                    let r = ui.add(egui::Button::new(tick).fill(if right { t.accent } else { Color32::TRANSPARENT }).min_size(egui::vec2(22.0, 20.0)));
+                    if r.on_hover_text(if right { "The right answer" } else { "Make this the right answer" }).clicked() && !right {
                         c.correct = Some(i);
                         changed = true;
                     }
@@ -350,7 +363,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 });
             }
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.add_enabled(n < 64, egui::Button::new("Add answer")).clicked() {
                     c.options.push(String::new());
                     changed = true;
@@ -372,7 +385,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         }
         Config::Measure(c) => {
             label(ui, "Measurement");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for p in Preset::ALL {
                     if ui.selectable_label(c.preset == p, p.label()).clicked() {
                         c.preset = p;
@@ -394,7 +407,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             label(ui, "Products");
             let n = c.products.len();
             for i in 0..n {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let mut rgb = obj::parse_color(&c.products[i].color);
                     if ui.color_edit_button_srgb(&mut rgb).changed() {
                         c.products[i].color = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
@@ -453,10 +466,9 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
 fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: &mut InteractiveObject, fid: impl Fn(&str) -> egui::Id) -> bool {
     let mut changed = false;
     let id = sh.id.0;
-    label(ui, "Behaviour");
-    ui.horizontal(|ui| {
-        ui.label("Fired by");
-        for (tr, name) in [(Trigger::Presenter, "the presenter"), (Trigger::AudienceClick, "a click on the screen")] {
+    label(ui, "Fired by");
+    ui.horizontal_wrapped(|ui| {
+        for (tr, name) in [(Trigger::Presenter, "The presenter"), (Trigger::AudienceClick, "A click on the screen")] {
             if ui.selectable_label(next.trigger == tr, name).clicked() {
                 next.trigger = tr;
                 changed = true;
@@ -464,7 +476,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         }
     });
     ui.horizontal(|ui| {
-        ui.label("Shortcut key");
+        label(ui, "Shortcut key");
         let cur = next.shortcut.map(|c| c.to_string()).unwrap_or_default();
         ui.scope(|ui| {
             ui.set_max_width(40.0);
@@ -473,8 +485,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 changed = true;
             }
         });
-        hint(ui, "One letter or digit pressed during the show.");
     });
+    hint(ui, "One letter or digit pressed during the show.");
     if ui.checkbox(&mut next.visible, "Visible when the slide opens").changed() {
         changed = true;
     }
@@ -485,7 +497,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         let x = deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, sh);
         let mut v = [x.x / size.width.max(1.0), x.y / size.height.max(1.0), x.w / size.width.max(1.0), x.h / size.height.max(1.0)];
         let mut moved = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                 ui.label(*name);
                 let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
@@ -512,7 +524,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         .unwrap_or_default();
     let cur = next.anchor.map(|a| a.shape);
     let cur_name = cur.and_then(|c| shapes.iter().find(|(i, _)| *i == c).map(|(_, n)| n.clone())).unwrap_or_else(|| "The slide".into());
-    egui::ComboBox::from_id_salt(fid("anchor")).selected_text(cur_name).show_ui(ui, |ui| {
+    egui::ComboBox::from_id_salt(fid("anchor")).width((ui.available_width() - 8.0).max(80.0)).selected_text(cur_name).show_ui(ui, |ui| {
         if ui.selectable_label(cur.is_none(), "The slide").clicked() && cur.is_some() {
             next.anchor = None;
             changed = true;
@@ -538,7 +550,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
     match &mut next.config {
         Config::Model(c) => {
             label(ui, "Turn when the slide opens");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (i, name) in [(2, "Turn"), (1, "Nod"), (0, "Tilt")] {
                     ui.label(name);
                     let mut deg = c.initial_rotation[i].to_degrees();
@@ -551,7 +563,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
             });
             hint(ui, "Turn goes round the model, Nod tips it forward or back, Tilt rolls it sideways.");
             label(ui, "Camera when the slide opens");
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let turn = app.deckrt.turn(id);
                 if ui.add_enabled(!turn.is_zero(), egui::Button::new("Use the current view")).clicked()
                     && let deckcraft_model::ShapeKind::Model3d { media, .. } = &sh.kind
@@ -591,7 +603,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                     changed = true;
                 }
             });
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("On click");
                 for (v, name) in [("advance", "Next picture"), ("picker", "A strip to choose from")] {
                     if ui.selectable_label(c.on_click == v, name).clicked() {
@@ -640,7 +652,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Popup(c) => {
             label(ui, "Panel position and size");
             let mut v = [c.panel_position[0], c.panel_position[1], c.panel_size[0], c.panel_size[1]];
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
                     let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(2));
@@ -675,8 +687,11 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                     None => "No slide".into(),
                 };
                 ui.horizontal(|ui| {
-                    ui.label(c.options.get(i).cloned().unwrap_or_default());
-                    egui::ComboBox::from_id_salt(fid(&format!("target{i}"))).selected_text(text).show_ui(ui, |ui| {
+                    ui.scope(|ui| {
+                        ui.set_max_width((ui.available_width() * 0.4).max(40.0));
+                        ui.add(egui::Label::new(c.options.get(i).cloned().unwrap_or_default()).truncate());
+                    });
+                    egui::ComboBox::from_id_salt(fid(&format!("target{i}"))).width((ui.available_width() - 8.0).max(80.0)).selected_text(text).show_ui(ui, |ui| {
                         if ui.selectable_label(cur.is_none(), "No slide").clicked() {
                             c.targets[i] = None;
                             changed = true;

@@ -1,5 +1,11 @@
 @echo off
 rem Starts deckrt. Put this file next to deckrt.exe, or in the folder you cloned the source to.
+rem
+rem If no window opens: deckrt tries DirectX 12, Vulkan, OpenGL and then Windows' software
+rem renderer on its own, and writes what happened to %APPDATA%\deckrt\logs\startup.log.
+rem To force one of them, remove the "rem" from one of these two lines:
+rem set WGPU_BACKEND=gl
+rem set DECKRT_SOFTWARE_GPU=1
 setlocal
 cd /d "%~dp0"
 if exist "deckrt.exe" (

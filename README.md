@@ -28,6 +28,11 @@ cargo run --release -p deckcraft-cli -- render deck.pptx --all out/
 
 On Linux the build needs the ALSA headers (`libasound2-dev` on Debian and Ubuntu).
 
+If no window opens on Windows: deckrt starts itself with DirectX 12 first, then Vulkan, OpenGL
+and Windows' software renderer, and remembers the one that worked. `%APPDATA%\deckrt\logs\startup.log`
+lists the attempts and `deckcraft.log` the last one. `Start deckrt.bat` has two lines to force a
+backend by hand.
+
 ## Adding an interactive object
 
 Open the deck, go to the slide, and on the Insert tab use the Interactive group:
