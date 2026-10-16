@@ -42,6 +42,23 @@ pub enum Drag {
     Measure { id: u32, handle: usize },
 }
 
+/// A stroke a phone drew on the slide, in slide units (0 to 1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct InkStroke {
+    /// `<phone id>:<stroke number>`.
+    pub key: String,
+    pub color: Color32,
+    pub points: Vec<[f32; 2]>,
+}
+
+/// Remove every stroke with a point within `radius` (slide units) of `(x, y)`. Returns whether
+/// any went.
+pub fn erase_ink(ink: &mut Vec<InkStroke>, x: f32, y: f32, radius: f32) -> bool {
+    let n = ink.len();
+    ink.retain(|s| !s.points.iter().any(|p| ((p[0] - x).powi(2) + (p[1] - y).powi(2)).sqrt() <= radius));
+    n != ink.len()
+}
+
 /// The editor window as it was before the show moved to another display.
 #[derive(Clone, Copy, Debug)]
 pub struct SavedWindow {
@@ -58,8 +75,12 @@ pub struct Ext {
     /// The slide the states were last brought up to date for.
     slide: Option<usize>,
     pub drag: Option<Drag>,
-    /// The object the primary button went down on, so the click fires on its release.
-    press_on: Option<u32>,
+    /// The window the drag is happening in. Both windows share this state and each reads its
+    /// own pointer, so the other window must leave the drag alone.
+    drag_role: Role,
+    /// The object the primary button went down on, and in which window, so the click fires on
+    /// its release there.
+    press_on: Option<(u32, Role)>,
     /// The wheel was taken by a model this frame (so the show does not turn the page).
     pub took_scroll: bool,
     /// The zoom region object that set the show's zoom, if any.
@@ -71,6 +92,8 @@ pub struct Ext {
     pub qr_shown: bool,
     /// A phone's pointer, in slide units.
     pub pointer: Option<[f32; 2]>,
+    /// What the phones drew on this slide.
+    pub ink: Vec<InkStroke>,
     /// Displays as listed when the show started.
     pub displays: Vec<DisplayInfo>,
     /// The display the audience screen is on, when there is more than one.
@@ -100,6 +123,7 @@ impl Default for Ext {
             states: BTreeMap::new(),
             slide: None,
             drag: None,
+            drag_role: Role::Audience,
             press_on: None,
             took_scroll: false,
             zoom_owner: None,
@@ -107,6 +131,7 @@ impl Default for Ext {
             phones: None,
             qr_shown: false,
             pointer: None,
+            ink: vec![],
             displays: vec![],
             audience: None,
             presenter_display: None,
@@ -175,7 +200,7 @@ pub fn objects_on(doc: &Presentation, idx: usize) -> Vec<Item> {
         .iter()
         .filter(|s| !s.hidden)
         .filter_map(|s| {
-            let o = obj::read(s)?;
+            let o = obj::read_any(s)?;
             let xfrm = s.xfrm?;
             Some(Item { id: s.id.0, shape: s.clone(), obj: o, xfrm })
         })
@@ -203,6 +228,7 @@ impl Ext {
             self.slide = Some(idx);
             self.drag = None;
             self.pointer = None;
+            self.ink.clear();
             self.changed_at = f64::MAX;
         }
         for it in objects_on(doc, idx) {
@@ -559,6 +585,18 @@ pub fn draw(
             _ => {}
         }
     }
+    // What the phones drew.
+    let ink_w = (map.srect.width() * 0.006).max(2.0);
+    for s in &ext.ink {
+        if s.points.len() < 2 {
+            if let Some(p) = s.points.first() {
+                painter.circle_filled(map.to_screen(p[0] * map.sw, p[1] * map.sh), ink_w / 2.0, s.color);
+            }
+            continue;
+        }
+        let pts: Vec<Pos2> = s.points.iter().map(|p| map.to_screen(p[0] * map.sw, p[1] * map.sh)).collect();
+        painter.add(egui::Shape::line(pts, Stroke::new(ink_w, s.color)));
+    }
     // A phone's pointer.
     if let Some([x, y]) = ext.pointer {
         let p = map.to_screen(x * map.sw, y * map.sh);
@@ -581,12 +619,8 @@ fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: boo
     painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(0x1e, 0x29, 0x3b));
     let pad = (rect.width().min(rect.height()) * 0.06).clamp(6.0, 20.0);
     let inner = rect.shrink(pad);
+    let painter = &painter.with_clip_rect(rect);
     let n = c.options.len().max(1) as f32;
-    let qsize = (inner.height() / (n + 2.5)).clamp(11.0, 30.0);
-    let asize = qsize * 0.85;
-    let q = painter.layout(c.question.clone(), FontId::proportional(qsize), Color32::WHITE, inner.width());
-    let qh = q.size().y;
-    painter.galley(inner.min, q, Color32::WHITE);
     let status = if revealed {
         format!("{total} vote{}", if total == 1 { "" } else { "s" })
     } else if open {
@@ -594,6 +628,22 @@ fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: boo
     } else {
         String::new()
     };
+    // The text size: the largest at which the question (wrapped), the rows and the status all
+    // fit in the box, down to a floor where the box is just too small.
+    let mut qsize = (inner.height() / (n + 2.5)).clamp(9.0, 30.0);
+    let mut q = painter.layout(c.question.clone(), FontId::proportional(qsize), Color32::WHITE, inner.width());
+    for _ in 0..12 {
+        let asize = qsize * 0.85;
+        let need = q.size().y + 6.0 + n * (asize + 6.0) + if status.is_empty() { 0.0 } else { asize + 4.0 };
+        if need <= inner.height() || qsize <= 9.0 {
+            break;
+        }
+        qsize = (qsize * 0.88).max(9.0);
+        q = painter.layout(c.question.clone(), FontId::proportional(qsize), Color32::WHITE, inner.width());
+    }
+    let asize = qsize * 0.85;
+    let qh = q.size().y;
+    painter.galley(inner.min, q, Color32::WHITE);
     let top = inner.min.y + qh + 6.0;
     let bottom = if status.is_empty() { inner.max.y } else { inner.max.y - asize - 4.0 };
     let row_h = ((bottom - top) / n).clamp(asize + 6.0, asize * 2.4);
@@ -658,8 +708,11 @@ pub(crate) fn pointer(
         (i.pointer.primary_pressed(), i.pointer.primary_down(), i.pointer.primary_released(), i.pointer.latest_pos(), i.smooth_scroll_delta.y)
     });
     let items = objects_on(doc, idx);
-    // A drag in progress follows the pointer wherever it goes.
+    // A drag in progress follows the pointer wherever it goes, in the window it started in.
     if let Some(d) = ext.drag {
+        if ext.drag_role != role {
+            return false;
+        }
         if !down {
             ext.drag = None;
             ext.press_on = None;
@@ -724,8 +777,13 @@ pub(crate) fn pointer(
         return false;
     }
     let Some(p) = latest else { return false };
-    // Topmost object under the pointer that takes input.
-    let under = items.iter().rev().find(|it| takes_input(it, role) && ext.states.get(&it.id).is_none_or(|s| s.visible) && map.rect(&it.xfrm).contains(p));
+    // Topmost object under the pointer that takes input. A measurement's handles sit on its
+    // edges, so a press just outside its box still reaches them.
+    let under = items.iter().rev().find(|it| {
+        let r = map.rect(&it.xfrm);
+        let r = if it.obj.kind() == Kind::Measure { r.expand(18.0) } else { r };
+        takes_input(it, role) && ext.states.get(&it.id).is_none_or(|s| s.visible) && r.contains(p)
+    });
     let Some(it) = under else { return false };
     let rect = map.rect(&it.xfrm);
     // The wheel zooms a model.
@@ -741,9 +799,11 @@ pub(crate) fn pointer(
     }
     // A click fires on the release that follows a press on the same object, so the release is
     // taken too and the show does not turn the page on it. Drags start on the press.
-    let clicked = released && ext.press_on == Some(it.id);
+    // A press and its release in one frame (a quick click) is a click too.
+    let clicked = released && (ext.press_on == Some((it.id, role)) || pressed);
     if pressed {
-        ext.press_on = Some(it.id);
+        ext.press_on = Some((it.id, role));
+        ext.drag_role = role;
     }
     if released {
         ext.press_on = None;
@@ -870,6 +930,25 @@ pub(crate) fn shortcut(ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>,
 // ---------------------------------------------------------------------------------------------
 // The presenter's control rows
 
+/// The presenter window is dark and the app's light theme draws dark text in its own widgets
+/// (sliders, number fields, pickers): give them light text and dark fills there.
+pub(crate) fn dark_widgets(ui: &mut Ui) {
+    let v = ui.visuals_mut();
+    v.override_text_color = Some(Color32::from_gray(235));
+    v.widgets.inactive.bg_fill = Color32::from_gray(60);
+    v.widgets.inactive.weak_bg_fill = Color32::from_gray(60);
+    v.widgets.hovered.bg_fill = Color32::from_gray(80);
+    v.widgets.hovered.weak_bg_fill = Color32::from_gray(80);
+    v.widgets.active.bg_fill = Color32::from_gray(90);
+    v.widgets.active.weak_bg_fill = Color32::from_gray(90);
+    v.widgets.open.bg_fill = Color32::from_gray(70);
+    v.widgets.open.weak_bg_fill = Color32::from_gray(70);
+    v.extreme_bg_color = Color32::from_gray(40);
+    v.selection.bg_fill = Color32::from_rgb(0x3b, 0x5b, 0x9a);
+    v.window_fill = Color32::from_gray(35);
+    v.panel_fill = Color32::from_gray(35);
+}
+
 fn row_button(ui: &mut Ui, text: &str, on: bool) -> egui::Response {
     let fill = if on { Color32::from_rgb(0x3b, 0x5b, 0x9a) } else { Color32::from_gray(60) };
     ui.add(egui::Button::new(egui::RichText::new(text).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)))
@@ -882,6 +961,7 @@ fn dim(ui: &mut Ui, text: &str) {
 /// One row per object on the current slide, in the presenter window. `go_to` receives a slide
 /// index when the presenter follows a poll's winning answer.
 pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>, doc: &Arc<Presentation>, idx: usize, now: f64, go_to: &mut Option<usize>) {
+    dark_widgets(ui);
     ext.sync_slide(doc, idx);
     let items = objects_on(doc, idx);
     if items.is_empty() {
@@ -1111,6 +1191,9 @@ pub fn place_show(ctx: &egui::Context, show: &mut Show, displays: Vec<DisplayInf
                 let inner = v.inner_rect.map(|r| r.size()).unwrap_or_else(|| outer.size());
                 Some(SavedWindow { pos: outer.min, inner, maximized: v.maximized.unwrap_or(false) })
             });
+            // Full screen here first, so a display that went away between the listing and this
+            // command still leaves the show full screen somewhere; then the chosen display.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::SetMonitor(audience));
         }
         _ => ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true)),
@@ -1162,6 +1245,7 @@ pub fn presenter_toolbar(ui: &mut Ui, show: &mut Show) {
         return;
     }
     let ctx = ui.ctx().clone();
+    dark_widgets(ui);
     ui.separator();
     dim(ui, "Audience on");
     let current = show.ext.audience.unwrap_or(0);
@@ -1261,6 +1345,59 @@ mod tests {
         assert!(matches!(ext.states[&it.id].st, TypeState::Zoom { zoomed: false, .. }));
     }
 
+    /// Both windows share the object states and each reads its own pointer: a drag begun on the
+    /// audience screen must survive the presenter window's frames, where no button is down.
+    #[test]
+    fn a_drag_in_one_window_survives_the_other_windows_frames() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        let png = {
+            let mut out = Vec::new();
+            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+            image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).expect("png");
+            out
+        };
+        let png = deckcraft_engine::cmd::base64_encode(&png);
+        let files = serde_json::json!([{"data": png, "name": "a.png"}, {"data": png, "name": "b.png"}]);
+        s.execute("interactive.insert", &serde_json::json!({"kind": "wipe", "files": files, "rect": [0.0, 0.0, 960.0, 540.0]})).expect("insert");
+        let doc = std::sync::Arc::new(s.doc().expect("doc").doc.clone());
+        let mut ext = Ext::default();
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        let map = Map::new(Rect::from_min_size(pos2(0.0, 0.0), vec2(960.0, 540.0)), unit(), &doc);
+        let press = egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(pos2(480.0, 270.0)),
+                egui::Event::PointerButton { pos: pos2(480.0, 270.0), button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE },
+            ],
+            ..Default::default()
+        };
+        ctx.run_ui(press, |ui| {
+            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.0, true);
+        })
+        .drop_without_applying_deltas();
+        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the press starts the drag");
+        // The presenter window's frame: no button down there.
+        let other = egui::Context::default();
+        other
+            .run_ui(egui::RawInput::default(), |ui| {
+                pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Presenter, 0.1, false);
+            })
+            .drop_without_applying_deltas();
+        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the other window leaves it alone");
+        // The audience pointer moves: the divider follows.
+        let moved = egui::RawInput { events: vec![egui::Event::PointerMoved(pos2(240.0, 270.0))], ..Default::default() };
+        ctx.run_ui(moved, |ui| {
+            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.2, true);
+        })
+        .drop_without_applying_deltas();
+        let pos = ext.states.values().find_map(|s| match s.st {
+            TypeState::Wipe { position } => Some(position),
+            _ => None,
+        });
+        assert!(pos.is_some_and(|p| (p - 0.25).abs() < 0.01), "{pos:?}");
+    }
+
     #[test]
     fn an_unpinned_injection_map_drops_its_points_on_the_next_slide() {
         let mut s = deckcraft_engine::Session::with_new();
@@ -1301,9 +1438,9 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
         show.ext.phones = Some(phones);
     }
     let blackout = show.blank.is_some();
-    let Ext { phones, states, pointer, changed_at, .. } = &mut show.ext;
+    let Ext { phones, states, pointer, ink, changed_at, .. } = &mut show.ext;
     if let Some(ph) = phones.as_mut()
-        && ph.logic(states, doc, idx, pointer, changed_at, now, blackout)
+        && ph.logic(states, doc, idx, pointer, ink, changed_at, now, blackout)
     {
         ctx.request_repaint();
     }

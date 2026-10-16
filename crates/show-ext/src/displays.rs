@@ -7,8 +7,28 @@
 use crate::DisplayInfo;
 
 pub fn list() -> Vec<DisplayInfo> {
-    let out = imp::list();
+    // `DECKRT_DISPLAYS=1920x1080+0+0*,1920x1080+1920+0` stands in for the real list (tests on a
+    // machine with one display); `*` marks the primary.
+    let out = match std::env::var("DECKRT_DISPLAYS") {
+        Ok(spec) if !spec.trim().is_empty() => parse_spec(&spec),
+        _ => imp::list(),
+    };
     log::info!("deckrt: {} display(s): {:?}", out.len(), out);
+    out
+}
+
+/// `WxH+X+Y[*]` entries separated by commas.
+pub fn parse_spec(spec: &str) -> Vec<DisplayInfo> {
+    let mut out = vec![];
+    for part in spec.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let primary = part.ends_with('*');
+        let p = part.trim_end_matches('*');
+        let Some((wh, xy)) = p.split_once('+') else { continue };
+        let Some((w, h)) = wh.split_once('x') else { continue };
+        let Some((x, y)) = xy.split_once('+') else { continue };
+        let (Ok(w), Ok(h), Ok(x), Ok(y)) = (w.parse::<u32>(), h.parse::<u32>(), x.parse::<i32>(), y.parse::<i32>()) else { continue };
+        out.push(DisplayInfo { index: out.len(), origin: [x, y], size_px: [w, h], scale: 1.0, primary });
+    }
     out
 }
 
@@ -16,9 +36,13 @@ pub fn list() -> Vec<DisplayInfo> {
 mod imp {
     use super::DisplayInfo;
     use windows::Win32::Foundation::{LPARAM, RECT};
-    use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOF_PRIMARY};
+    use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO};
     use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
     use windows::core::BOOL;
+
+    /// `MONITORINFO::dwFlags` bit for the primary display (the `windows` crate keeps it under
+    /// `Win32_UI_WindowsAndMessaging`, a feature this crate does not otherwise need).
+    const MONITORINFOF_PRIMARY: u32 = 1;
 
     unsafe extern "system" fn each(h: HMONITOR, _: HDC, _: *mut RECT, l: LPARAM) -> BOOL {
         // SAFETY: `l` is the pointer to the `Vec` passed by `list`, alive for the whole call.
@@ -97,6 +121,18 @@ mod imp {
     use super::DisplayInfo;
     pub fn list() -> Vec<DisplayInfo> {
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod spec_tests {
+    #[test]
+    fn a_display_spec_parses() {
+        let d = super::parse_spec("1920x1080+0+0*, 1280x720+1920+0, junk");
+        assert_eq!(d.len(), 2);
+        assert!(d[0].primary && !d[1].primary);
+        assert_eq!(d[1].origin, [1920, 0]);
+        assert_eq!(d[1].size_px, [1280, 720]);
     }
 }
 

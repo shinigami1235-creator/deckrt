@@ -132,6 +132,28 @@ impl ObjectState {
                 // The shortcut takes the last point back; placing one needs a position.
                 points.pop().is_some()
             }
+            (TypeState::Model { layers, turn, zoom, .. }, Config::Model(c)) => {
+                // The key peels the model: each press hides the next layer in the file's order;
+                // after the last one is reached, every layer shows again. A model with no layers
+                // goes back to its starting view.
+                if c.layers.len() < 2 {
+                    *turn = [0.0, 0.0];
+                    *zoom = 1.0;
+                    return true;
+                }
+                let hidden = c.layers.iter().filter(|l| layers.get(*l) == Some(&false)).count();
+                if hidden + 1 >= c.layers.len() {
+                    for l in &c.layers {
+                        layers.insert(l.clone(), true);
+                    }
+                } else {
+                    let next = c.layers.iter().find(|l| layers.get(*l) != Some(&false));
+                    if let Some(l) = next {
+                        layers.insert(l.clone(), false);
+                    }
+                }
+                true
+            }
             (TypeState::Model { .. }, _) | (TypeState::Wipe { .. }, _) | (TypeState::Measure { .. }, _) => false,
             _ => false,
         }
@@ -192,6 +214,30 @@ mod tests {
 
     fn obj(c: Config) -> InteractiveObject {
         InteractiveObject::new(c)
+    }
+
+    #[test]
+    fn a_models_key_peels_its_layers_then_shows_them_all() {
+        let o = obj(Config::Model(crate::object::ModelConfig { layers: vec!["skin".into(), "muscle".into(), "bone".into()], ..Default::default() }));
+        let mut s = ObjectState::initial(&o);
+        let shown = |s: &ObjectState| match &s.st {
+            TypeState::Model { layers, .. } => layers.iter().filter(|(_, on)| **on).map(|(n, _)| n.clone()).collect::<Vec<_>>(),
+            _ => vec![],
+        };
+        assert!(s.fire(&o, 0.0));
+        assert_eq!(shown(&s), vec!["bone", "muscle"]);
+        s.fire(&o, 0.0);
+        assert_eq!(shown(&s), vec!["bone"]);
+        s.fire(&o, 0.0);
+        assert_eq!(shown(&s), vec!["bone", "muscle", "skin"]);
+        // No layers: the key puts the view back.
+        let o = obj(Config::Model(Default::default()));
+        let mut s = ObjectState::initial(&o);
+        if let TypeState::Model { turn, .. } = &mut s.st {
+            *turn = [40.0, 0.0];
+        }
+        assert!(s.fire(&o, 0.0));
+        assert!(matches!(s.st, TypeState::Model { turn: [0.0, 0.0], .. }));
     }
 
     #[test]

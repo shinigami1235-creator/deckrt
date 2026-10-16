@@ -23,14 +23,14 @@ pub fn live_shapes(app: &SlideApp) -> Vec<deckcraft_model::ShapeId> {
     if st.selection.target != deckcraft_engine::Target::Slides {
         return vec![];
     }
-    st.shapes().iter().filter(|s| matches!(s.kind, ShapeKind::Model3d { .. }) && obj::is_interactive(s)).map(|s| s.id).collect()
+    st.shapes().iter().filter(|s| matches!(s.kind, ShapeKind::Model3d { .. })).map(|s| s.id).collect()
 }
 
 /// The selected model's box on screen, when one is selected.
 fn selected_model(app: &SlideApp, xf: Xf) -> Option<(u32, Rect)> {
     let st = app.session.active()?;
     let sh = st.selected_shapes().first().copied()?;
-    if !matches!(sh.kind, ShapeKind::Model3d { .. }) || !obj::is_interactive(sh) {
+    if !matches!(sh.kind, ShapeKind::Model3d { .. }) {
         return None;
     }
     let x = deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, sh);
@@ -103,7 +103,7 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
     let items: Vec<(deckcraft_model::Shape, obj::InteractiveObject, deckcraft_geom::Xfrm)> = st
         .shapes()
         .iter()
-        .filter_map(|s| obj::read(s).map(|o| (s.clone(), o, deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s))))
+        .filter_map(|s| obj::read_any(s).map(|o| (s.clone(), o, deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s))))
         .collect();
     let ppp = ui.ctx().pixels_per_point();
     for (sh, o, x) in items {
@@ -121,8 +121,8 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
                 let hidden = c.hidden_layers.clone();
                 let drawn = app.deckrt.models.draw(ui.ctx(), &mut app.deckrt.gpu, sh.id.0 as u64, *media, &model, &view, w, h, &hidden, turning);
                 if let Some(d) = drawn {
-                    // The poster shows through the model's transparent background: cover it.
-                    painter.rect_filled(rect, CornerRadius::ZERO, t.canvas);
+                    // The slide texture leaves the model out (`live_shapes`), so the slide shows
+                    // through the model's transparent background.
                     super::model_view::Models::paint(painter, &d, rect);
                 }
             }

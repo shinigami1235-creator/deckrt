@@ -33,7 +33,8 @@ On Linux the build needs the ALSA headers (`libasound2-dev` on Debian and Ubuntu
 Open the deck, go to the slide, and on the Insert tab use the Interactive group:
 
 - **3D model** asks for a `.glb` file. Its node names become the layer list and the model lands on
-  the slide, turnable with Alt+drag in the editor and with a drag in the show.
+  the slide. In the editor, drag the round handle in its middle to turn it and use the wheel to
+  zoom; in the show, drag the model itself. A 3D model inserted by PowerPoint turns the same way.
 - **Image swap** asks for several pictures; they show in the order picked and a click shows the next.
 - **Wipe** asks for two pictures, before and after, under one slider.
 - **Zoom region** and **Popup** take no file. The region zooms up to fill the slide; the popup
@@ -52,11 +53,18 @@ and the type's finer settings.
 ## In the show
 
 Slide Show › From Beginning opens the show on the second display when one is attached and the
-presenter view on the first. The presenter view has one row per object on the current slide
+presenter view on the first. Each object's shortcut key works in both windows; a model's key
+peels its layers one by one. The presenter view has one row per object on the current slide
 (layers and a view reset for a model, next for a swap, a slider for a wipe, in and out for a zoom,
 open and close for a popup, open voting, close voting and reveal for a poll, a slider for a scrub,
 the presets and the reading for a measurement, the products, dose, undo and clear for an injection
 map), a display picker with Swap, and the Phones section with the QR code the audience scans.
+
+Phones: one QR code, a page in the phone's browser, a name. Phones vote in polls and see the
+tally once it is revealed. The presenter grants one phone control at a time; that phone turns the
+model, points, or draws on the slide, and the presenter takes control back or clears the drawing.
+The server listens on the laptop's wifi address; when the venue wifi keeps phones apart, Start
+hotspot turns on the Windows mobile hotspot and the QR follows it.
 
 ## How the objects are stored
 
@@ -66,8 +74,9 @@ too. The other objects fall back to a picture or a text box in PowerPoint: a swa
 their first picture, a wipe its before picture, a poll its question and answers, a popup its
 trigger box. Pictures and models are parts of the package like any other media.
 
-A deck made with the earlier deckrt app (a `.pptx` with a `.deckrt` sidecar next to it) is offered
-an import of its objects on open.
+A deck made with the earlier deckrt app (a `.pptx` with a `.deckrt` sidecar next to it) gets its
+objects brought in when it opens; a dialog says what came over. The sidecar file is left as it is,
+and saving the deck keeps the objects inside the .pptx.
 
 ## Tests
 

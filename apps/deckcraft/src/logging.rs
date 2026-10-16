@@ -246,6 +246,25 @@ impl AppLogger {
         }
     }
 
+    /// deckrt: send records to `path`, appended, with no rotation (the start-up supervisor's own
+    /// file, so the children's rotation of `deckcraft.log` does not push its lines out). A file
+    /// past a megabyte starts over.
+    pub fn attach_file(&self, path: &Path) -> Result<PathBuf, String> {
+        let fresh = std::fs::metadata(path).map(|m| m.len() > 1024 * 1024).unwrap_or(false);
+        let opened = std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")))
+            .and_then(|_| std::fs::OpenOptions::new().create(true).append(!fresh).truncate(fresh).write(true).open(path));
+        match opened {
+            Ok(file) => {
+                self.sink.lock().unwrap_or_else(PoisonError::into_inner).attach(file);
+                Ok(path.to_path_buf())
+            }
+            Err(e) => {
+                self.stderr_only();
+                Err(format!("{}: {e}", path.display()))
+            }
+        }
+    }
+
     /// No log file this run (no settings directory, or it can't be used): stop keeping records for one.
     pub fn stderr_only(&self) {
         self.sink.lock().unwrap_or_else(PoisonError::into_inner).close();

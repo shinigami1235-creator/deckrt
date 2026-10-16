@@ -195,7 +195,8 @@ fn main() -> eframe::Result {
         if let Some(logger) = logger
             && let Some(d) = config_dir()
         {
-            let _ = logger.attach_dir(&d.join(logging::LOG_DIR));
+            // Its own file: each child rotates `deckcraft.log`, and this one must outlive them.
+            let _ = logger.attach_file(&d.join(logging::LOG_DIR).join("startup.log"));
         }
         let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("deckrt"));
         let args: Vec<String> = raw_args.into_iter().filter(|a| a != "--no-supervise").collect();

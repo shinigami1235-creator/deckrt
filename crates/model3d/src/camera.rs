@@ -16,7 +16,9 @@ pub struct View {
     pub target: [f64; 3],
     /// Vertical field of view in degrees.
     pub fov_deg: f64,
-    /// Radians about x, y and z applied to the model before the camera looks at it.
+    /// The model's own turn, in radians, as model-viewer's `orientation` (what the earlier
+    /// deckrt saved): `[roll, pitch, yaw]`, about the model's Z, X and Y axes, applied in that
+    /// order. With glTF's Y up, yaw turns the model round, pitch nods it, roll tilts it.
     pub rotation: [f64; 3],
 }
 
@@ -56,9 +58,9 @@ impl View {
     /// The model matrix: the configured rotation about the model's centre.
     pub fn model_matrix(&self, model: &Model) -> Mat4 {
         let c = model.center();
-        let r = Mat4::from_rotation_z(self.rotation[2] as f32)
-            * Mat4::from_rotation_y(self.rotation[1] as f32)
-            * Mat4::from_rotation_x(self.rotation[0] as f32);
+        let r = Mat4::from_rotation_y(self.rotation[2] as f32)
+            * Mat4::from_rotation_x(self.rotation[1] as f32)
+            * Mat4::from_rotation_z(self.rotation[0] as f32);
         Mat4::from_translation(c) * r * Mat4::from_translation(-c)
     }
 

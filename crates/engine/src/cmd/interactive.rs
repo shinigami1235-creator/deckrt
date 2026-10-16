@@ -70,7 +70,15 @@ pub fn specs() -> Vec<CommandSpec> {
 /// The object on shape `id` of the current slide.
 pub fn object_of(s: &Session, id: ShapeId) -> Result<(Shape, InteractiveObject)> {
     let sh = shape_of(s, id)?;
-    let o = obj::read(&sh).ok_or_else(|| EngineError::Other(format!("shape {id} is not an interactive object")))?;
+    let mut o = obj::read_any(&sh).ok_or_else(|| EngineError::Other(format!("shape {id} is not an interactive object")))?;
+    // A native PowerPoint 3D model: its layers are the file's node names.
+    if obj::is_native_model(&sh)
+        && let ShapeKind::Model3d { media, .. } = sh.kind
+        && let Config::Model(c) = &mut o.config
+        && let Some(m) = s.doc()?.doc.media(media)
+    {
+        c.layers = deckcraft_interactive::glb::layers(&m.data).unwrap_or_default();
+    }
     Ok((sh, o))
 }
 
@@ -142,7 +150,7 @@ pub fn place(s: &Session, kind: Kind, at: Option<(f64, f64)>, aspect: Option<f64
     // Topmost shape under the point, groups and lines left out.
     let under = at.and_then(|_| {
         shapes.iter().rev().find(|x| {
-            if obj::is_interactive(x) || x.is_group() || x.is_line() || x.hidden {
+            if obj::is_live(x) || x.is_group() || x.is_line() || x.hidden {
                 return false;
             }
             let b = xfrm_of(&st.doc, &st.selection, x);
@@ -548,7 +556,7 @@ fn list(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let mut out = vec![];
     for sh in &shapes {
-        if let Some(o) = obj::read(sh) {
+        if let Some(o) = obj::read_any(sh) {
             out.push(json!({
                 "id": sh.id,
                 "kind": o.kind().id(),

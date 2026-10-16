@@ -73,15 +73,16 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/render/src/lib.rs` | a `Model3d` shape draws its poster picture (upstream drew nothing) |
 | `crates/mcp/src/server.rs` | server name and links |
 | `crates/ui-egui/Cargo.toml` | depends on the fork crates; `gpu3d` feature |
-| `crates/ui-egui/src/lib.rs` | `pub mod deckrt;`, `Services::pick_open_many`, `SlideApp::deckrt` state, `deckrt::logic` and `deckrt::end_frame` calls in the frame, `drain_requests` is `pub(crate)`; messages say deckrt; `app.links` is gone |
+| `crates/ui-egui/src/lib.rs` | `pub mod deckrt;`, `Services::pick_open_many`, `SlideApp::deckrt` state, `deckrt::logic` and `deckrt::end_frame` calls in the frame, `drain_requests` is `pub(crate)`; `SlideApp::run` sends `file.close` through the Save / Don't Save / Cancel dialog when the deck has unsaved changes (upstream #60: the palette and the control channel bypassed it); messages say deckrt; `app.links` is gone |
 | `crates/ui-egui/src/canvas.rs` | the slide texture leaves out live models (`textures.hide`), `deckrt::canvas::draw` after the slide image, `deckrt::canvas::pointer` before the slide's pointer handling |
 | `crates/ui-egui/src/textures.rs` | `hide: Vec<ShapeId>` passed as `RenderOpts::skip` and part of the cache key |
 | `crates/ui-egui/src/ribbon.rs` | `deckrt::ribbon_group` on the Insert tab; window title uses `APP_NAME`; the Learn More button is gone |
 | `crates/ui-egui/src/panes.rs` | the `interactive` pane |
-| `crates/ui-egui/src/dialogs.rs` | `deckrt.*` dialog ids go to `deckrt::dialog`; titles and About say deckrt; the logo is the fork's own drawing |
+| `crates/ui-egui/src/dialogs.rs` | `deckrt.*` dialog ids go to `deckrt::dialog`; the close dialog's own `file.close` carries `{"discard": true}`; titles and About say deckrt; the logo is the fork's own drawing |
 | `crates/ui-egui/src/backstage.rs`, `menus.rs` | names and links |
-| `crates/ui-egui/src/show.rs` | `Show.ext` (deckrt's state for the show); `zoom`, `blank`, `pen` are `pub(crate)`; `Zoom::region` and `zoom_uv` for the zoom region object; `render_frame` skips the shapes the show draws live (`hidden_in_show`); the shortcut hook at the top of `keyboard`; in `ui`: `place_show` at the start, `logic` each frame, `audience_avail` and `draw_qr` for the QR column, `audience_pointer` before the click is read, `took_scroll` before the page flick, `draw_audience` after the slide picture, `end_frame`, `end_show` and `restore_window` at the end; `presenter_window` takes `&mut app.deckrt`, uses `presenter_builder`, `move_presenter_if_asked`, `presenter_toolbar`, `presenter_slide` (objects and rows under the current slide), `presenter_phones` (between the next slide and the notes), and follows a poll's winning slide (`go_to`) |
-| `apps/deckcraft/src/main.rs` | the supervisor runs first on Windows (`supervise::wanted`); `App` marks the first frame (`supervise::mark_ready`); `--no-supervise`; `list_displays` is `deckcraft_show_ext::displays::list` |
+| `crates/ui-egui/src/show.rs` | `Show.ext` (deckrt's state for the show); `zoom`, `blank`, `pen` are `pub(crate)`; `Zoom::region` and `zoom_uv` for the zoom region object; `render_frame` skips the shapes the show draws live (`hidden_in_show`); the shortcut hook at the top of `keyboard`; in `ui`: `place_show` at the start, `logic` each frame, `audience_avail` and `draw_qr` for the QR column, `audience_pointer` every frame before the click is read (a drag is many frames with no click), `took_scroll` before the page flick, `draw_audience` after the slide picture, `end_frame`, `end_show` and `restore_window` at the end; `presenter_window` takes `&mut app.deckrt`, uses `presenter_builder`, `move_presenter_if_asked`, `presenter_toolbar`, `presenter_slide` (objects and rows under the current slide), `presenter_phones` (between the next slide and the notes), and follows a poll's winning slide (`go_to`) |
+| `apps/deckcraft/src/main.rs` | the supervisor runs first on Windows (`supervise::wanted`) and logs to `logs/startup.log`; `App` marks the first frame (`supervise::mark_ready`); `--no-supervise`; `list_displays` is `deckcraft_show_ext::displays::list` |
+| `apps/deckcraft/src/logging.rs` | `AppLogger::attach_file`: an appended log file with no rotation, for the supervisor |
 | `apps/deckcraft/src/graphics.rs` | the software adapter selector for the supervisor's last attempt (`DECKRT_SOFTWARE_GPU`) |
 | `apps/deckcraft/Cargo.toml`, `build.rs`, `src/main.rs` | the binary is `deckrt`; Windows resources; `pick_open_many` and the `model` purpose; the wgpu device is handed to `deckrt::gpu::Gpu` |
 | `apps/deckcraft-cli` | the `links` subcommand is gone |
@@ -96,6 +97,24 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   string of edits. The deck stays unsaved so a save keeps them.
 - `Model3d` shapes draw their poster in the CPU renderer. That changes nothing on decks without
   models (checked: the ecm deck renders all 70 slides pixel-identical to the unmodified fork).
+- A PowerPoint 3D model with no tag is drawn and turned like a deckrt model (`object::read_any`
+  gives it the default settings; the engine fills its layers from the `.glb`). The first change
+  made in the pane puts the tag on it.
+- A model's `initial_rotation` is model-viewer's `orientation`, `[roll, pitch, yaw]` about the
+  model's Z, X and Y axes, because that is what the earlier deckrt wrote into its sidecars. The
+  pane calls them Tilt, Nod and Turn.
+- A model's shortcut key peels it: each press hides the next layer in file order; after the last
+  one, every layer shows again. A model with no layers goes back to its starting view.
+- The audience screen and the presenter window share the object states but each reads its own
+  pointer, so a drag belongs to the window it started in (`Ext::drag_role`); the other window's
+  frames leave it alone. The first run lost every drag this way.
+- Phones with control can draw on the slide (the phone page's Draw and Erase). The strokes live
+  in `Ext::ink` for the current slide only, in the phone's own colour, drawn on both windows and
+  into the live frame, and the presenter can clear them.
+- On Windows the supervisor logs to `logs/startup.log` (appended, never rotated) because each
+  child rotates `deckcraft.log` and four attempts would push the parent's lines out.
+- `crates/show-ext` allows `unsafe` (the one crate in the fork that does) for
+  `EnumDisplayMonitors`; the workspace lint forbids it everywhere else.
 
 ## PowerPoint feel: next run
 

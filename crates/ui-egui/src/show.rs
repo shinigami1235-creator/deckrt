@@ -565,8 +565,10 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
     show.expire_goto(now);
     // The clock of the triggered animations runs before anything reacts to the pointer.
     show.tick_triggers(&doc, now);
-    // deckrt hook: the objects take the pointer first.
-    let clicked = clicked && !crate::deckrt::show::audience_pointer(&mut show, &ctx, srect, &doc, now);
+    // deckrt hook: the objects take the pointer first, every frame (a drag is many frames with
+    // no click in them).
+    let taken = crate::deckrt::show::audience_pointer(&mut show, &ctx, srect, &doc, now);
+    let clicked = clicked && !taken;
     let on_slide = !show.grid
         && !show.pen
         && !show.laser

@@ -96,7 +96,7 @@ pub fn icon(kind: Kind) -> Icon {
 /// state is dropped for shapes that are gone.
 pub fn logic(app: &mut SlideApp) {
     let Some(st) = app.session.active() else { return };
-    let selected = st.selected_shapes().first().map(|s| (s.id.0, obj::is_interactive(s)));
+    let selected = st.selected_shapes().first().map(|s| (s.id.0, obj::is_live(s)));
     match selected {
         Some((_, true)) if app.ui.pane.as_deref() == Some("format") || app.ui.pane.is_none() => app.ui.pane = Some(PANE.into()),
         Some((_, false)) | None if app.ui.pane.as_deref() == Some(PANE) => app.ui.pane = Some("format".into()),
@@ -209,7 +209,17 @@ pub fn insert(app: &mut SlideApp, kind: Kind) {
 /// Insert `kind` with files already chosen (the ribbon, drops and tests).
 pub fn insert_with_paths(app: &mut SlideApp, kind: Kind, paths: &[String]) {
     let mut params = json!({"kind": kind.id()});
-    if let Some((x, y)) = app.deckrt.last_click {
+    // Where it lands: over the selected shape (an ordinary one), else where the user last
+    // clicked, else the middle of the slide.
+    let selected = app.session.active().and_then(|st| {
+        let sh = st.selected_shapes().first().copied()?;
+        if obj::is_live(sh) || sh.is_group() || sh.is_line() {
+            return None;
+        }
+        let x = deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, sh);
+        Some((x.x + x.w / 2.0, x.y + x.h / 2.0))
+    });
+    if let Some((x, y)) = selected.or(app.deckrt.last_click) {
         params["at"] = json!([x, y]);
     }
     if !paths.is_empty() {
@@ -274,8 +284,8 @@ pub fn dialog(_app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) 
             ui.label(text);
             ui.add_space(8.0);
             let mut done = false;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new("OK").min_size(egui::vec2(72.0, 24.0))).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     done = true;
                 }
             });
@@ -289,6 +299,10 @@ pub fn dialog(_app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) 
 pub fn selected(app: &SlideApp) -> Option<(deckcraft_model::Shape, obj::InteractiveObject)> {
     let st = app.session.active()?;
     let sh = st.selected_shapes().first().copied()?.clone();
+    if obj::is_native_model(&sh) {
+        // A PowerPoint model: the engine fills in its layers from the file.
+        return deckcraft_engine::cmd::interactive::object_of(&app.session, sh.id).ok();
+    }
     let o = obj::read(&sh)?;
     Some((sh, o))
 }

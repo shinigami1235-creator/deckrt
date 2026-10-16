@@ -22,7 +22,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     env:
       CARGO_TERM_COLOR: always
       # The fonts the exe embeds (see crates/fonts/build.rs); the build fails without them.
@@ -74,6 +74,8 @@ jobs:
           & "$bin\deckcraft-cli.exe" --version
           & "$bin\deckrt.exe" --version
 
+      # The Windows-only code (the hotspot, the displays, the start-up supervisor) is written on
+      # Linux and compiled only here, so its tests run here.
       - name: Run the tests that matter on Windows
         working-directory: deckrt
         run: cargo test --release --locked --target x86_64-pc-windows-msvc -p deckcraft-phones -p deckcraft-show-ext -p deckcraft-interactive -p deckcraft-model3d -p deckcraft

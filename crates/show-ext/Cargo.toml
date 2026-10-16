@@ -5,8 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "deckrt's slide show extras that need the platform: the connected displays, so the show goes to the projector and the presenter window stays on the laptop"
 
-[lints]
-workspace = true
+# Not the workspace lints: `displays.rs` calls EnumDisplayMonitors on Windows, which needs `unsafe`
+# (the one place in the fork that does). The rest of the workspace forbids it.
+[lints.rust]
+unsafe_code = "allow"
 
 [dependencies]
 log = { workspace = true }

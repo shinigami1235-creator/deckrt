@@ -18,7 +18,7 @@ use deckcraft_phones::{AddressInfo, Inbound, PhoneMessage, RosterEntry, hotspot,
 use egui::{Color32, Ui, vec2};
 use serde_json::{Value, json};
 
-use super::show::{Ext, Item, objects_on};
+use super::show::{Ext, InkStroke, Item, erase_ink, objects_on};
 
 /// The port the server tries first (the old deckrt's), then the ones after it.
 pub const PORT: u16 = 8720;
@@ -26,6 +26,8 @@ pub const PORT: u16 = 8720;
 const PHONE_WIDTH: u32 = 960;
 /// A live frame goes out at most this often while something moves.
 const LIVE_INTERVAL: f64 = 0.4;
+/// The colour each phone's pointer and strokes take, by its place in the roster.
+const PHONE_COLORS: [&str; 6] = ["#ff5c5c", "#4c8dff", "#2ea05c", "#ffb049", "#b56cff", "#00b5c8"];
 
 /// Who holds control and who waits. The presenter holds it until something is granted.
 #[derive(Default, Debug, Clone)]
@@ -279,6 +281,7 @@ impl Phones {
         doc: &Arc<Presentation>,
         idx: usize,
         pointer: &mut Option<[f32; 2]>,
+        ink: &mut Vec<InkStroke>,
         changed_at: &mut f64,
         now: f64,
         blackout: bool,
@@ -416,7 +419,37 @@ impl Phones {
                         };
                         self.note_input(at);
                     }
-                    PhoneMessage::Join { .. } | PhoneMessage::Ping { .. } | PhoneMessage::Draw { .. } | PhoneMessage::Erase { .. } => {}
+                    PhoneMessage::Draw { stroke, points, done, at } => {
+                        if !self.queue.holders.iter().any(|h| h == &id) {
+                            continue;
+                        }
+                        let key = format!("{id}:{stroke}");
+                        let pts = points.iter().filter(|p| p[0].is_finite() && p[1].is_finite()).map(|p| [p[0].clamp(0.0, 1.0) as f32, p[1].clamp(0.0, 1.0) as f32]);
+                        match ink.iter_mut().find(|s| s.key == key) {
+                            Some(s) => s.points.extend(pts),
+                            None => {
+                                if ink.len() < 500 {
+                                    ink.push(InkStroke { key, color: self.color_of(&id), points: pts.collect() });
+                                }
+                            }
+                        }
+                        if let Some(s) = ink.iter_mut().find(|s| s.key == format!("{id}:{stroke}")) {
+                            s.points.truncate(4000);
+                        }
+                        let _ = done;
+                        *changed_at = now;
+                        self.note_input(at);
+                    }
+                    PhoneMessage::Erase { x, y, at } => {
+                        if !self.queue.holders.iter().any(|h| h == &id) {
+                            continue;
+                        }
+                        if erase_ink(ink, x as f32, y as f32, 0.03) {
+                            *changed_at = now;
+                        }
+                        self.note_input(at);
+                    }
+                    PhoneMessage::Join { .. } | PhoneMessage::Ping { .. } => {}
                 },
             }
         }
@@ -444,6 +477,13 @@ impl Phones {
             self.write_results(ext_states, doc);
         }
         redraw
+    }
+
+    /// The colour a phone's pointer and strokes take: by its place in the roster.
+    fn color_of(&self, id: &str) -> Color32 {
+        let n = self.roster.iter().position(|r| r.id == id).unwrap_or(0);
+        let [r, g, b] = deckcraft_interactive::object::parse_color(PHONE_COLORS[n % PHONE_COLORS.len()]);
+        Color32::from_rgb(r, g, b)
     }
 
     fn note_input(&mut self, phone_at: f64) {
@@ -533,8 +573,7 @@ impl Phones {
             self.targets.get(id).filter(|t| models.iter().any(|m| &m.id.to_string() == *t)).cloned().unwrap_or_else(|| models[0].id.to_string())
         };
         let n = self.roster.iter().position(|r| r.id == id).unwrap_or(0);
-        let colors = ["#ff5c5c", "#4c8dff", "#2ea05c", "#ffb049", "#b56cff", "#00b5c8"];
-        json!({"t": "you", "poll": poll_id, "vote": vote, "control": control, "position": position, "color": colors[n % colors.len()], "target": target})
+        json!({"t": "you", "poll": poll_id, "vote": vote, "control": control, "position": position, "color": PHONE_COLORS[n % PHONE_COLORS.len()], "target": target})
     }
 
     pub fn grant(&mut self, id: &str) {
@@ -644,14 +683,15 @@ impl Phones {
         }
         let items = objects_on(doc, idx);
         let drawn: Vec<&Item> = items.iter().filter(|it| matches!(it.obj.kind(), deckcraft_interactive::Kind::Model | deckcraft_interactive::Kind::ImageSwap | deckcraft_interactive::Kind::Scrub | deckcraft_interactive::Kind::Wipe) && ext.states.get(&it.id).is_none_or(|s| s.visible)).collect();
-        if drawn.is_empty() {
+        if drawn.is_empty() && ext.ink.is_empty() {
             if self.live_current.is_some() {
                 self.live_current = None;
                 self.last_show.clear();
             }
             return;
         }
-        let key = format!("{idx}|{:?}", drawn.iter().map(|it| ext.states.get(&it.id).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>());
+        let ink_points: usize = ext.ink.iter().map(|s| s.points.len()).sum();
+        let key = format!("{idx}|{}|{ink_points}|{:?}", ext.ink.len(), drawn.iter().map(|it| ext.states.get(&it.id).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>());
         if key == self.live_key && self.live_current.is_some_and(|(s, _)| s == idx) {
             return;
         }
@@ -693,6 +733,10 @@ impl Phones {
                 _ => {}
             }
         }
+        for s in &ext.ink {
+            let [r, g, b, _] = s.color.to_array();
+            layers.push(Layer::Ink { color: [r, g, b], points: s.points.iter().map(|p| [p[0] as f64, p[1] as f64]).collect() });
+        }
         let base = self.slides.as_ref().map(|s| s.dir.join(format!("slide-{:03}.jpg", idx + 1)));
         let (tx, rx) = channel();
         let aspect = doc.slide_size.width / doc.slide_size.height.max(1.0);
@@ -726,6 +770,40 @@ enum Layer {
     Model { rect: [f64; 4], model: Arc<deckcraft_model3d::Model>, view: deckcraft_model3d::View, hidden: Vec<String> },
     Picture { rect: [f64; 4], img: image::RgbaImage, cover: bool },
     Clipped { rect: [f64; 4], clip: [f64; 4], img: image::RgbaImage },
+    Ink { color: [u8; 3], points: Vec<[f64; 2]> },
+}
+
+/// A round dot of radius `r` at `(cx, cy)`.
+fn dot(canvas: &mut image::RgbaImage, cx: f64, cy: f64, r: f64, color: [u8; 3]) {
+    let (w, h) = (canvas.width() as i64, canvas.height() as i64);
+    let (x0, x1) = (((cx - r).floor() as i64).max(0), ((cx + r).ceil() as i64).min(w - 1));
+    let (y0, y1) = (((cy - r).floor() as i64).max(0), ((cy + r).ceil() as i64).min(h - 1));
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            if (x as f64 + 0.5 - cx).powi(2) + (y as f64 + 0.5 - cy).powi(2) <= r * r {
+                canvas.put_pixel(x as u32, y as u32, image::Rgba([color[0], color[1], color[2], 255]));
+            }
+        }
+    }
+}
+
+/// A stroke as dots along each segment, `width` pixels wide.
+fn polyline(canvas: &mut image::RgbaImage, points: &[[f64; 2]], width: f64, color: [u8; 3]) {
+    let (w, h) = (canvas.width() as f64, canvas.height() as f64);
+    let r = (width / 2.0).max(1.0);
+    let px: Vec<(f64, f64)> = points.iter().map(|p| (p[0] * w, p[1] * h)).collect();
+    if let [only] = px.as_slice() {
+        dot(canvas, only.0, only.1, r, color);
+    }
+    for seg in px.windows(2) {
+        let (a, b) = (seg[0], seg[1]);
+        let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        let steps = (len / (r * 0.7)).ceil().clamp(1.0, 2000.0) as usize;
+        for i in 0..=steps {
+            let t = i as f64 / steps as f64;
+            dot(canvas, a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t, r, color);
+        }
+    }
 }
 
 fn jpeg_of(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
@@ -764,6 +842,7 @@ fn compose(base: Option<PathBuf>, aspect: f64, layers: Vec<Layer>) -> Option<Vec
                 let dy = y + (bh as i64 - fitted.height() as i64) / 2;
                 image::imageops::overlay(&mut canvas, &fitted, dx, dy);
             }
+            Layer::Ink { color, points } => polyline(&mut canvas, &points, w as f64 * 0.006, color),
             Layer::Clipped { rect, clip, img } => {
                 let (x, y, bw, bh) = px(rect);
                 let fitted = fit(&img, bw, bh, true);
@@ -837,6 +916,7 @@ pub fn paint_qr(painter: &egui::Painter, rect: egui::Rect, url: &str) -> bool {
 pub fn section(ui: &mut Ui, ext: &mut Ext, rect: egui::Rect) -> f32 {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let ui = &mut child;
+    super::show::dark_widgets(ui);
     let top = rect.min.y;
     ui.label(egui::RichText::new("Phones").size(13.0).color(Color32::from_gray(170)));
     let Some(ph) = ext.phones.as_mut() else {
@@ -956,6 +1036,10 @@ pub fn section(ui: &mut Ui, ext: &mut Ext, rect: egui::Rect) -> f32 {
                     }
                 }
             });
+            if !ext.ink.is_empty() && button(ui, "Clear the drawing").clicked() {
+                ext.ink.clear();
+                ext.changed_at = f64::MAX;
+            }
             if let Some(p) = &ph.results_path {
                 dim(ui, &format!("Votes in {}", p.display()));
             }
@@ -1007,8 +1091,9 @@ mod tests {
         let jpeg = compose(None, 16.0 / 9.0, vec![Layer::Model { rect: [0.25, 0.25, 0.5, 0.5], model, view, hidden: vec![] }]).expect("frame");
         let img = image::load_from_memory(&jpeg).expect("jpeg").to_rgb8();
         assert_eq!(img.width(), PHONE_WIDTH);
-        let c = img.get_pixel(480, 270);
-        assert!(c[0] > c[1] + 30 && c[0] > c[2] + 30, "the red cube is in the middle: {c:?}");
+        // The cube's body sits a little under the box's middle (its cap is above it).
+        let c = img.get_pixel(480, 285);
+        assert!(c[0] as u16 > c[1] as u16 + 30 && c[0] as u16 > c[2] as u16 + 30, "the red cube is in the middle: {c:?}");
         let corner = img.get_pixel(5, 5);
         assert!(corner[0] > 240 && corner[1] > 240, "the slide shows through around it: {corner:?}");
     }
@@ -1016,11 +1101,10 @@ mod tests {
     #[test]
     fn the_qr_paints() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(Default::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(200.0, 200.0), egui::Sense::hover());
-                assert!(paint_qr(ui.painter(), r, "http://192.168.1.20:8720/?t=abcdefghij"));
-            });
+        let out = ctx.run_ui(Default::default(), |ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(200.0, 200.0), egui::Sense::hover());
+            assert!(paint_qr(ui.painter(), r, "http://192.168.1.20:8720/?t=abcdefghij"));
         });
+        out.drop_without_applying_deltas();
     }
 }

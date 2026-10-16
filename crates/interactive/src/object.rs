@@ -139,7 +139,8 @@ pub struct ModelConfig {
     pub layers: Vec<String>,
     /// Layers hidden when the slide opens.
     pub hidden_layers: Vec<String>,
-    /// Radians about x, y, z applied to the model before the camera looks at it.
+    /// The model's own turn when the slide opens, in radians: `[roll, pitch, yaw]` about its Z,
+    /// X and Y axes (model-viewer's `orientation`, as the earlier deckrt saved it).
     pub initial_rotation: [f64; 3],
     /// The camera when the slide opens; `None` frames the whole model.
     pub camera: Option<CameraPose>,
@@ -544,6 +545,18 @@ pub fn is_native_model(shape: &Shape) -> bool {
     matches!(shape.kind, ShapeKind::Model3d { .. }) && !is_interactive(shape)
 }
 
+/// The object on `shape`, or the implied one of a native PowerPoint 3D model: a model with the
+/// default settings (no layers listed, the whole model framed). Writing settings to such a
+/// shape puts the tag on it. `layers` fills the list for a native model, when known.
+pub fn read_any(shape: &Shape) -> Option<InteractiveObject> {
+    read(shape).or_else(|| is_native_model(shape).then(|| InteractiveObject::new(Config::Model(ModelConfig::default()))))
+}
+
+/// `shape` is drawn and controlled by deckrt: a tagged object or a native 3D model.
+pub fn is_live(shape: &Shape) -> bool {
+    is_interactive(shape) || is_native_model(shape)
+}
+
 /// The slide key a poll target names: the slide's [`SLIDE_TAG`] value.
 pub fn slide_key(slide: &deckcraft_model::Slide) -> Option<&str> {
     slide.tags.iter().find(|(n, _)| n.eq_ignore_ascii_case(SLIDE_TAG)).map(|(_, v)| v.as_str())
@@ -624,6 +637,19 @@ mod tests {
         let Config::Poll(p) = o.config else { panic!("poll") };
         assert_eq!(p.correct, None, "an out-of-range right answer is dropped");
         assert!(p.reveal_correct);
+    }
+
+    #[test]
+    fn a_native_model_reads_as_a_default_model_object() {
+        let mut s = Shape::default();
+        assert!(read_any(&s).is_none());
+        s.kind = ShapeKind::Model3d { media: MediaId(4), poster: None };
+        assert!(is_native_model(&s) && is_live(&s) && !is_interactive(&s));
+        let o = read_any(&s).expect("implied");
+        assert_eq!(o.kind(), Kind::Model);
+        write(&mut s, &o);
+        assert!(is_interactive(&s) && !is_native_model(&s));
+        assert_eq!(read_any(&s), Some(o));
     }
 
     #[test]

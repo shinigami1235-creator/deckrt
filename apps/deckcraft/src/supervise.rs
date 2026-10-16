@@ -144,7 +144,7 @@ pub fn run(exe: &Path, args: &[String], config_dir: Option<&Path>) -> i32 {
         }
     }
     let text = format!(
-        "deckrt could not open a window with any graphics backend.\n\nTried:\n  {}\n\nUpdate the graphics drivers (Intel and NVIDIA on this laptop), then start deckrt again.\nThe log is in the logs folder next to this file.\n",
+        "deckrt could not open a window with any graphics backend.\n\nTried:\n  {}\n\nUpdate the graphics drivers (Intel and NVIDIA on this laptop), then start deckrt again.\nThe logs are in the logs folder next to this file: startup.log for the attempts, deckcraft.log for the last one.\n",
         failures.join("\n  ")
     );
     eprintln!("{text}");

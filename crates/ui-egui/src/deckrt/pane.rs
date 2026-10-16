@@ -17,10 +17,13 @@ use crate::widgets;
 fn text_field(ui: &mut Ui, id: egui::Id, value: &str, multiline: bool) -> Option<String> {
     let focused = ui.memory(|m| m.has_focus(id));
     let mut buf: String = if focused { ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| value.to_string()) } else { value.to_string() };
+    // The field takes the width it has, never more: inside a row an unbounded field would push
+    // the pane wider than the window.
+    let w = ui.available_width().max(40.0);
     let r = if multiline {
-        ui.add(egui::TextEdit::multiline(&mut buf).id(id).desired_width(f32::INFINITY).desired_rows(3))
+        ui.add(egui::TextEdit::multiline(&mut buf).id(id).desired_width(w).desired_rows(3))
     } else {
-        ui.add(egui::TextEdit::singleline(&mut buf).id(id).desired_width(f32::INFINITY))
+        ui.add(egui::TextEdit::singleline(&mut buf).id(id).desired_width(w))
     };
     ui.data_mut(|d| d.insert_temp(id, buf.clone()));
     let enter = !multiline && r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -326,10 +329,13 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                         changed = true;
                     }
                     let cur = c.options.get(i).cloned().unwrap_or_default();
-                    if let Some(v) = text_field(ui, fid(&format!("opt{i}")), &cur, false) {
-                        c.options[i] = v;
-                        changed = true;
-                    }
+                    ui.scope(|ui| {
+                        ui.set_max_width((ui.available_width() - 76.0).max(40.0));
+                        if let Some(v) = text_field(ui, fid(&format!("opt{i}")), &cur, false) {
+                            c.options[i] = v;
+                            changed = true;
+                        }
+                    });
                     if ui.add_enabled(n > 2, egui::Button::new("Remove")).clicked() {
                         c.options.remove(i);
                         if i < c.targets.len() {
@@ -502,7 +508,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
     let shapes: Vec<(u32, String)> = app
         .session
         .active()
-        .map(|st| st.shapes().iter().filter(|s| s.id.0 != id && !obj::is_interactive(s)).map(|s| (s.id.0, s.name.clone())).collect())
+        .map(|st| st.shapes().iter().filter(|s| s.id.0 != id && !obj::is_live(s)).map(|s| (s.id.0, s.name.clone())).collect())
         .unwrap_or_default();
     let cur = next.anchor.map(|a| a.shape);
     let cur_name = cur.and_then(|c| shapes.iter().find(|(i, _)| *i == c).map(|(_, n)| n.clone())).unwrap_or_else(|| "The slide".into());
@@ -531,10 +537,10 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
     ui.add_space(6.0);
     match &mut next.config {
         Config::Model(c) => {
-            label(ui, "Initial rotation");
+            label(ui, "Turn when the slide opens");
             ui.horizontal(|ui| {
-                for (i, name) in ["x", "y", "z"].iter().enumerate() {
-                    ui.label(*name);
+                for (i, name) in [(2, "Turn"), (1, "Nod"), (0, "Tilt")] {
+                    ui.label(name);
                     let mut deg = c.initial_rotation[i].to_degrees();
                     let resp = ui.add(egui::DragValue::new(&mut deg).speed(1.0).suffix("°").fixed_decimals(0));
                     if committed(ui, resp, &mut deg) {
@@ -543,6 +549,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                     }
                 }
             });
+            hint(ui, "Turn goes round the model, Nod tips it forward or back, Tilt rolls it sideways.");
             label(ui, "Camera when the slide opens");
             ui.horizontal(|ui| {
                 let turn = app.deckrt.turn(id);

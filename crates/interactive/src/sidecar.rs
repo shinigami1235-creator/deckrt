@@ -498,7 +498,13 @@ pub fn import(sidecar: &Sidecar, dir: &Path, doc: &Presentation, file_slide_ids:
     let mut objects = vec![];
     let mut skipped = vec![];
     for o in &sidecar.objects {
-        let id = if o.id.is_empty() { o.kind.clone() } else { o.id.clone() };
+        // What a skipped object is called in the report: its label, else its type, else its id.
+        let id = match (o.label.as_deref().map(str::trim).filter(|l| !l.is_empty()), crate::object::Kind::from_id(&o.kind)) {
+            (Some(l), _) => l.to_string(),
+            (None, Some(k)) => k.label().to_string(),
+            (None, None) if !o.id.is_empty() => o.id.clone(),
+            (None, None) => o.kind.clone(),
+        };
         let p = place(o, doc, file_slide_ids);
         if p.resolution == Resolution::SlideRemoved {
             skipped.push((id, p.resolution));
@@ -596,7 +602,7 @@ mod tests {
         let words = r.plain_words("t.deckrt");
         assert_eq!(
             words,
-            "Brought in from t.deckrt: zoom region on slide 2, poll on slide 3. Save the presentation to keep them. Not brought in: c: its slide is not in the deck; d: the file assets/missing.png is missing next to the .deckrt."
+            "Brought in from t.deckrt: zoom region on slide 2, poll on slide 3. Save the presentation to keep them. Not brought in: Measure: its slide is not in the deck; Popup: the file assets/missing.png is missing next to the .deckrt."
         );
     }
 

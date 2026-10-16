@@ -658,6 +658,12 @@ impl SlideApp {
     /// Run a command by id (UI commands here, everything else in the engine). Errors show in the
     /// status bar and are returned.
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        // deckrt hook (upstream #60): Close from anywhere (the palette included) asks first when
+        // the presentation has unsaved changes; `{"discard": true}` is the dialog's own answer.
+        if id == "file.close" && params.get("discard").and_then(Value::as_bool) != Some(true) && self.session.active().is_some_and(|d| d.is_dirty()) {
+            self.close_presentation();
+            return Ok(Value::Null);
+        }
         let r = if UI_COMMANDS.iter().any(|c| c.0 == id) {
             self.run_ui(id, &params)
         } else {
