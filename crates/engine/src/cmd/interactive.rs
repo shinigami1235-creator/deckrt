@@ -592,14 +592,32 @@ pub fn pending_sidecar(_s: &Session) -> Option<String> {
     None
 }
 
-/// `file.open` hook: import the deck's old sidecar once, as the earlier deckrt would have.
+/// The dialog the UI shows once after a sidecar came in (`params.text` holds the words).
+pub const IMPORTED_DIALOG: &str = "deckrt.imported";
+
+/// `file.open` hook: import the deck's old sidecar once, as the earlier deckrt would have, and
+/// tell the user what came over.
 pub fn after_open(s: &mut Session) {
     let Some(path) = pending_sidecar(s) else { return };
+    let file_name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "the .deckrt file".into());
     match import_sidecar(s, &json!({"path": path})) {
-        Ok(r) => log::info!("deckrt: {}", r["text"].as_str().unwrap_or("")),
+        Ok(r) => {
+            log::info!("deckrt: {}", r["text"].as_str().unwrap_or(""));
+            // The objects are part of the opened deck now, not a string of edits to undo one by
+            // one. The deck stays unsaved so a save keeps them.
+            if let Some(st) = s.active_mut() {
+                st.history.undo.clear();
+                st.history.redo.clear();
+            }
+            let words = r["words"].as_str().unwrap_or("").to_string();
+            s.ui_requests.push(crate::UiRequest::Dialog { id: IMPORTED_DIALOG.into(), params: json!({"text": words, "file": file_name}) });
+        }
         Err(e) => {
             log::warn!("deckrt: the sidecar could not be imported: {e}");
-            s.ui_requests.push(crate::UiRequest::Message { text: format!("The deckrt sidecar next to this file could not be imported: {e}") });
+            s.ui_requests.push(crate::UiRequest::Dialog {
+                id: IMPORTED_DIALOG.into(),
+                params: json!({"text": format!("{file_name} could not be brought in: {e}"), "file": file_name}),
+            });
         }
     }
 }
@@ -646,6 +664,7 @@ fn import_sidecar(s: &mut Session, p: &Value) -> Result<Value> {
         deckcraft_interactive::sidecar::import(&sc, &dir, &doc, &file_ids, &mut load)
     };
     let text = report.text();
+    let words = report.plain_words(&sidecar.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "the .deckrt file".into()));
     let current = s.doc()?.selection.slide;
     let mut imported = vec![];
     for item in &report.objects {
@@ -693,6 +712,7 @@ fn import_sidecar(s: &mut Session, p: &Value) -> Result<Value> {
         "imported": imported,
         "skipped": report.skipped.iter().map(|(id, r)| json!({"id": id, "why": format!("{r:?}")})).collect::<Vec<_>>(),
         "text": text,
+        "words": words,
     }))
 }
 

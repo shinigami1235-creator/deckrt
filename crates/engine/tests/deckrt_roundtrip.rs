@@ -159,6 +159,18 @@ fn the_ecm_sidecar_migrates_its_model_into_the_deck() {
     s.execute("file.open", &json!({"path": path.to_string_lossy()})).expect("open");
     let doc = s.doc().expect("doc").doc.clone();
     assert_eq!(doc.slides.len(), 70);
+    // The user is told once, in plain words, and Ctrl+Z does not peel the objects off again.
+    let told = s.ui_requests.iter().find_map(|r| match r {
+        deckcraft_engine::UiRequest::Dialog { id, params } if id == deckcraft_engine::cmd::interactive::IMPORTED_DIALOG => {
+            params.get("text").and_then(Value::as_str).map(String::from)
+        }
+        _ => None,
+    });
+    let told = told.expect("the import is announced");
+    assert!(told.starts_with("Brought in from ecm and fibroblasts.deckrt: 3D model on slide "), "{told}");
+    assert!(told.ends_with("Save the presentation to keep it."), "{told}");
+    assert!(s.doc().expect("doc").is_dirty(), "the deck needs saving to keep the objects");
+    assert!(s.execute("edit.undo", &json!({})).is_err() || objects(&s.doc().expect("doc").doc).len() == 1, "undo does not remove the import");
     let models: Vec<_> = objects(&doc).into_iter().filter(|(_, o, _)| o.kind() == Kind::Model).collect();
     assert_eq!(models.len(), 1, "the one model came over");
     let (_, o, kind) = &models[0];

@@ -243,6 +243,34 @@ fn pick_many(app: &mut SlideApp, purpose: &str) -> Vec<String> {
     r
 }
 
+/// Titles of the `deckrt.*` dialogs.
+pub fn dialog_title(id: &str) -> &'static str {
+    match id {
+        "deckrt.imported" => "Interactive objects brought in",
+        _ => "deckrt",
+    }
+}
+
+/// Bodies of the `deckrt.*` dialogs. Returns whether the dialog closes.
+pub fn dialog(_app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> bool {
+    match d.id.as_str() {
+        "deckrt.imported" => {
+            let text = d.params.get("text").and_then(Value::as_str).unwrap_or("").to_string();
+            ui.set_max_width(460.0);
+            ui.label(text);
+            ui.add_space(8.0);
+            let mut done = false;
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("OK").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    done = true;
+                }
+            });
+            done
+        }
+        _ => true,
+    }
+}
+
 /// The object on the selected shape, if it is one.
 pub fn selected(app: &SlideApp) -> Option<(deckcraft_model::Shape, obj::InteractiveObject)> {
     let st = app.session.active()?;

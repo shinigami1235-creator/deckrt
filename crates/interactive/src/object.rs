@@ -48,6 +48,11 @@ impl Kind {
         }
     }
 
+    /// The name inside a sentence: `3D model`, `image swap`.
+    pub fn words(self) -> String {
+        if self == Kind::Model { "3D model".to_string() } else { self.label().to_lowercase() }
+    }
+
     /// The `type` value in the tag and in the earlier sidecar files.
     pub fn id(self) -> &'static str {
         match self {
@@ -504,15 +509,20 @@ pub fn parse_color(s: &str) -> [u8; 3] {
     [v(1), v(3), v(5)]
 }
 
+/// Tag names are matched without regard to case: PowerPoint's own tag API upper-cases names.
+fn is_tag(name: &str) -> bool {
+    name.eq_ignore_ascii_case(TAG)
+}
+
 /// The object on `shape`, if it carries one.
 pub fn read(shape: &Shape) -> Option<InteractiveObject> {
-    shape.tags.iter().find(|(n, _)| n == TAG).and_then(|(_, v)| InteractiveObject::from_json(v))
+    shape.tags.iter().find(|(n, _)| is_tag(n)).and_then(|(_, v)| InteractiveObject::from_json(v))
 }
 
 /// Put `obj` on `shape`, replacing any object tag there.
 pub fn write(shape: &mut Shape, obj: &InteractiveObject) {
     let json = obj.to_json();
-    if let Some(t) = shape.tags.iter_mut().find(|(n, _)| n == TAG) {
+    if let Some(t) = shape.tags.iter_mut().find(|(n, _)| is_tag(n)) {
         t.1 = json;
     } else {
         shape.tags.push((TAG.to_string(), json));
@@ -521,11 +531,11 @@ pub fn write(shape: &mut Shape, obj: &InteractiveObject) {
 
 /// Take the object tag off `shape`.
 pub fn clear(shape: &mut Shape) {
-    shape.tags.retain(|(n, _)| n != TAG);
+    shape.tags.retain(|(n, _)| !is_tag(n));
 }
 
 pub fn is_interactive(shape: &Shape) -> bool {
-    shape.tags.iter().any(|(n, _)| n == TAG)
+    shape.tags.iter().any(|(n, _)| is_tag(n))
 }
 
 /// A PowerPoint 3D model that carries no object tag: upstream's native model, drawn by deckrt
@@ -536,7 +546,7 @@ pub fn is_native_model(shape: &Shape) -> bool {
 
 /// The slide key a poll target names: the slide's [`SLIDE_TAG`] value.
 pub fn slide_key(slide: &deckcraft_model::Slide) -> Option<&str> {
-    slide.tags.iter().find(|(n, _)| n == SLIDE_TAG).map(|(_, v)| v.as_str())
+    slide.tags.iter().find(|(n, _)| n.eq_ignore_ascii_case(SLIDE_TAG)).map(|(_, v)| v.as_str())
 }
 
 /// A fresh slide key: eight hex digits from the slide id and a counter, unique within the deck.

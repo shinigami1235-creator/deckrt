@@ -71,6 +71,7 @@ fn title(id: &str) -> &'static str {
         "quit" => "deckrt",
         "themeColors" => "Create New Theme Colors",
         "themeFonts" => "Create New Theme Fonts",
+        id if id.starts_with("deckrt.") => crate::deckrt::dialog_title(id), // deckrt hook
         _ => "deckrt",
     }
 }
@@ -2185,6 +2186,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "themeColors" => theme_colors_dialog(app, ui, d),
         "themeFonts" => theme_fonts_dialog(app, ui, d),
         "dateTime" => date_time_dialog(app, ui, d),
+        id if id.starts_with("deckrt.") => crate::deckrt::dialog(app, ui, d), // deckrt hook
         _ => {
             ui.label(format!("“{}” is not available yet.", d.id));
             let (ok, cancel) = buttons(ui, "OK");

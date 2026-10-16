@@ -129,6 +129,40 @@ pub struct Report {
 }
 
 impl Report {
+    /// What the user is told once the deck has opened: `Brought in from talk.deckrt: 3D model on
+    /// slide 12, poll on slide 20. Save the presentation to keep them.` Skipped objects get a
+    /// second sentence saying why.
+    pub fn plain_words(&self, file_name: &str) -> String {
+        if self.objects.is_empty() && self.skipped.is_empty() {
+            return format!("{file_name} holds no interactive objects.");
+        }
+        let mut s = String::new();
+        if !self.objects.is_empty() {
+            let items: Vec<String> = self.objects.iter().map(|o| format!("{} on slide {}", o.obj.kind().words(), o.slide + 1)).collect();
+            let (list, more) = if items.len() > 8 { (items[..8].join(", "), format!(" and {} more", items.len() - 8)) } else { (items.join(", "), String::new()) };
+            s.push_str(&format!(
+                "Brought in from {file_name}: {list}{more}. Save the presentation to keep {}.",
+                if self.objects.len() == 1 { "it" } else { "them" }
+            ));
+        }
+        if !self.skipped.is_empty() {
+            let why: Vec<String> = self
+                .skipped
+                .iter()
+                .map(|(id, r)| match r {
+                    Resolution::SlideRemoved => format!("{id}: its slide is not in the deck"),
+                    Resolution::AssetMissing(p) => format!("{id}: the file {p} is missing next to the .deckrt"),
+                    _ => format!("{id}: its type is unknown"),
+                })
+                .collect();
+            if !s.is_empty() {
+                s.push(' ');
+            }
+            s.push_str(&format!("Not brought in: {}.", why.join("; ")));
+        }
+        s
+    }
+
     /// `9 interactive objects: 7 reattached, 1 placed from the sidecar's position, 1 skipped.`
     pub fn text(&self) -> String {
         let n = self.objects.len() + self.skipped.len();
@@ -559,6 +593,11 @@ mod tests {
         assert_eq!(r.skipped[1].1, Resolution::AssetMissing("assets/missing.png".into()));
         assert_eq!(loads, 1);
         assert!(r.text().starts_with("4 interactive objects: 2 reattached, 2 skipped ("), "{}", r.text());
+        let words = r.plain_words("t.deckrt");
+        assert_eq!(
+            words,
+            "Brought in from t.deckrt: zoom region on slide 2, poll on slide 3. Save the presentation to keep them. Not brought in: c: its slide is not in the deck; d: the file assets/missing.png is missing next to the .deckrt."
+        );
     }
 
     #[test]

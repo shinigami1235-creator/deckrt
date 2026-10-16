@@ -11,7 +11,7 @@ pub const PREFIX: &str = "DECKRT.";
 
 /// Whether a tag may carry media tokens.
 pub fn carries_media(name: &str) -> bool {
-    name.starts_with(PREFIX)
+    name.len() >= PREFIX.len() && name.is_char_boundary(PREFIX.len()) && name[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)
 }
 
 /// Every `"<scheme>:<value>"` token in a JSON string value. Tokens are matched as whole JSON
@@ -89,6 +89,6 @@ mod tests {
         assert_eq!(back, v);
         assert_eq!(remap(v, |m| MediaId(m.0 + 1)), r#"{"images":["media:8","media:10"],"text":"not media:3 here","x":"media:"}"#);
         assert_eq!(rewrite("", "media", |_| None), "");
-        assert!(carries_media("DECKRT.OBJECT") && !carries_media("OTHER"));
+        assert!(carries_media("DECKRT.OBJECT") && carries_media("deckrt.object") && !carries_media("OTHER") && !carries_media("DECK"));
     }
 }
