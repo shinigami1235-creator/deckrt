@@ -1,0 +1,23 @@
+[package]
+name = "deckcraft-model3d"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Draws glTF binary (.glb) models: a software rasteriser for posters and thumbnails, and a wgpu renderer for the editor canvas and the slide show"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# The wgpu renderer.
+gpu = ["dep:wgpu", "dep:bytemuck"]
+
+[dependencies]
+gltf = { version = "1.4", default-features = false, features = ["utils", "names"] }
+glam = "0.30"
+image = { workspace = true }
+log = { workspace = true }
+wgpu = { version = "30", optional = true, default-features = false, features = ["std", "wgsl", "vulkan", "gles", "dx12", "metal"] }
+serde_json = { workspace = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }

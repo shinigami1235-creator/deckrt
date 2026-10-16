@@ -1,0 +1,27 @@
+[package]
+name = "deckcraft-phones"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Audience phones: the HTTP and WebSocket server a show runs for the phones in the room"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws", "query"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util", "fs"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = "0.9"
+if-addrs = "0.13"
+log = { workspace = true }
+chrono = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Networking_NetworkOperators", "Networking_Connectivity", "Foundation"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.29"
+tempfile = "3"

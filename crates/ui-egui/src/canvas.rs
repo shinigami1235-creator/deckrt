@@ -182,6 +182,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let pixel = vec2(slide_rect.width() / px.0 as f32, slide_rect.height() / px.1 as f32);
     let visible = visible_region(avail, slide_rect, pixel);
     let typing_into = st.and_then(|d| d.selection.text.as_ref()).filter(|t| !t.notes).map(|t| t.shape);
+    app.textures.hide = crate::deckrt::canvas::live_shapes(app); // deckrt hook
+    let st = app.session.active();
     let tex = match st.map(|d| (d.selection.target, d)) {
         Some((Target::Slides, d)) => {
             let idx = d.selection.slide;
@@ -205,6 +207,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         painter.image(tex.id(), at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
     app.perf.render_ms = app.textures.last_render_ms;
+    crate::deckrt::canvas::draw(app, ui, &painter, xf); // deckrt hook
     media_frames(app, &painter, xf);
     // Notes Master view: the current slide inside the slide-image placeholder, as in PowerPoint.
     let notes_preview = app.session.active().filter(|d| d.selection.target == Target::NotesMaster).and_then(|d| {
@@ -709,6 +712,9 @@ fn draw_guides(app: &SlideApp, painter: &egui::Painter, xf: Xf, slide: Rect, t: 
 fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) {
     if crate::eyedropper::canvas(app, ui, resp, xf) {
         return;
+    }
+    if crate::deckrt::canvas::pointer(app, ui, resp, xf) {
+        return; // deckrt hook: a model being turned
     }
     if app.anim_preview_active() {
         // A click on the slide ends the preview, then selects as usual.

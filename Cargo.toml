@@ -37,6 +37,10 @@ deckcraft-isobmff = { path = "crates/isobmff" }
 deckcraft-matroska = { path = "crates/matroska" }
 deckcraft-ogg = { path = "crates/ogg" }
 deckcraft-opus = { path = "crates/opus" }
+# the fork's own crates
+deckcraft-interactive = { path = "crates/interactive" }
+deckcraft-model3d = { path = "crates/model3d" }
+deckcraft-phones = { path = "crates/phones" }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }

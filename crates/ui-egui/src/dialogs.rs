@@ -47,7 +47,7 @@ fn title(id: &str) -> &'static str {
         "paragraph" => "Paragraph",
         "tabs" => "Tabs",
         "font" => "Font",
-        "about" => "About DeckCraft",
+        "about" => "About deckrt",
         "preferences" => "Preferences",
         "autocorrect" => "AutoCorrect",
         "gridOptions" => "Grid Options",
@@ -68,10 +68,10 @@ fn title(id: &str) -> &'static str {
         "smartart" => "Choose a SmartArt Graphic",
         "bullets" => "Bullets and Numbering",
         "action" => "Action Settings",
-        "quit" => "DeckCraft",
+        "quit" => "deckrt",
         "themeColors" => "Create New Theme Colors",
         "themeFonts" => "Create New Theme Fonts",
-        _ => "DeckCraft",
+        _ => "deckrt",
     }
 }
 
@@ -2607,17 +2607,17 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
     ui.vertical_centered(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::hover());
         paint_logo(ui.painter(), r);
-        ui.label(egui::RichText::new("DeckCraft").font(theme::bold(22.0)));
+        ui.label(egui::RichText::new(deckcraft_engine::links::APP_NAME).font(theme::bold(22.0)));
         ui.label(egui::RichText::new(version_line()).color(t.text_dim));
         ui.add_space(6.0);
-        ui.label("Presentations and slide shows, rebuilt from scratch in pure Rust.");
-        ui.label("An open-source, clean-room project. Not affiliated with Microsoft.");
+        ui.label("Opens and saves PowerPoint files and adds interactive objects to the slides.");
+        ui.label("A fork of DeckCraft by the ArtCraft Team. Not affiliated with Microsoft.");
         ui.add_space(6.0);
-        ui.hyperlink_to("Join our community on Discord", deckcraft_engine::links::DISCORD);
-        ui.hyperlink_to("getartcraft.com/apps/deckcraft", deckcraft_engine::links::APP_PAGE);
-        ui.hyperlink_to("Source on GitHub", deckcraft_engine::links::GITHUB);
+        ui.hyperlink_to("DeckCraft source on GitHub", deckcraft_engine::links::UPSTREAM);
         ui.add_space(6.0);
-        ui.label(egui::RichText::new("MIT OR Apache-2.0 · © 2026 ArtCraft Team and the DeckCraft contributors").size(11.0).color(t.text_faint));
+        ui.label(
+            egui::RichText::new("MIT OR Apache-2.0 · © 2026 the DeckCraft contributors and the deckrt contributors").size(11.0).color(t.text_faint),
+        );
     });
 }
 
@@ -2636,20 +2636,23 @@ pub fn version_line() -> String {
     s
 }
 
-/// DeckCraft's mark, drawn in code: a slide card with a play triangle in our orange.
+/// deckrt's mark, drawn in code: a slide card and a turned cube on a teal square (the same
+/// drawing as `assets/app-icon`).
 pub fn paint_logo(p: &egui::Painter, r: Rect) {
-    let orange = Color32::from_rgb(0xF2, 0x6B, 0x1D);
-    let deep = Color32::from_rgb(0xC2, 0x4E, 0x14);
-    let card = r.shrink(r.width() * 0.08);
-    p.rect_filled(card.translate(vec2(r.width() * 0.04, r.width() * 0.05)), CornerRadius::same((r.width() * 0.14) as u8), deep);
-    p.rect_filled(card, CornerRadius::same((r.width() * 0.14) as u8), orange);
-    let c = card.center();
-    let s = card.width() * 0.22;
-    p.add(egui::Shape::convex_polygon(
-        vec![pos2(c.x - s * 0.7, c.y - s), pos2(c.x + s, c.y), pos2(c.x - s * 0.7, c.y + s)],
-        Color32::WHITE,
-        Stroke::NONE,
-    ));
+    let teal = Color32::from_rgb(0x14, 0x56, 0x5E);
+    let paper = Color32::from_rgb(0xF5, 0xF7, 0xF6);
+    let w = r.width();
+    let at = |x: f32, y: f32| pos2(r.min.x + x * w, r.min.y + y * w);
+    p.rect_filled(r, CornerRadius::same((w * 0.22) as u8), teal);
+    p.rect_filled(Rect::from_min_max(at(0.17, 0.24), at(0.83, 0.72)), CornerRadius::same((w * 0.04).max(1.0) as u8), paper);
+    p.rect_filled(Rect::from_min_max(at(0.23, 0.31), at(0.52, 0.345)), CornerRadius::same(1), teal);
+    p.rect_filled(Rect::from_min_max(at(0.23, 0.38), at(0.44, 0.405)), CornerRadius::same(1), Color32::from_rgb(0x96, 0xAA, 0xAC));
+    let tri = |pts: [(f32, f32); 4], c: Color32| p.add(egui::Shape::convex_polygon(pts.iter().map(|(x, y)| at(*x, *y)).collect(), c, Stroke::NONE));
+    tri([(0.66, 0.43), (0.807, 0.515), (0.66, 0.60), (0.513, 0.515)], Color32::from_rgb(0xFF, 0xB0, 0x49));
+    tri([(0.513, 0.515), (0.66, 0.60), (0.66, 0.77), (0.513, 0.685)], Color32::from_rgb(0xE2, 0x7D, 0x20));
+    tri([(0.807, 0.515), (0.807, 0.685), (0.66, 0.77), (0.66, 0.60)], Color32::from_rgb(0xBE, 0x60, 0x12));
+    p.rect_filled(Rect::from_min_max(at(0.44, 0.74), at(0.56, 0.78)), CornerRadius::same(1), paper);
+    p.rect_filled(Rect::from_min_max(at(0.36, 0.78), at(0.64, 0.815)), CornerRadius::same(2), paper);
 }
 
 /// The selection's proofing language and whether it's marked Do Not Check Spelling: the run at
@@ -3217,7 +3220,7 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 p["with"] = json!(d.get("with", ""));
                 let msg = match app.session.execute("text.replace", &p) {
                     Ok(v) => format!("Replaced {} occurrence(s).", v.get("replaced").and_then(Value::as_u64).unwrap_or(0)),
-                    Err(_) => format!("DeckCraft can't find “{text}”."),
+                    Err(_) => format!("deckrt can't find “{text}”."),
                 };
                 d.fields.insert("status".into(), msg);
                 d.fields.remove("cur");
@@ -3232,7 +3235,7 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
     if find_next {
         let list = app.session.execute("text.find", &q).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
         if list.is_empty() {
-            d.fields.insert("status".into(), format!("DeckCraft can't find “{text}”."));
+            d.fields.insert("status".into(), format!("deckrt can't find “{text}”."));
             d.fields.remove("cur");
         } else {
             let n = d.get("next", "0").parse::<usize>().unwrap_or(0) % list.len();

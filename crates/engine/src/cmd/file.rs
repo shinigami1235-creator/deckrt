@@ -143,7 +143,7 @@ fn open_other(name: &str, bytes: &[u8]) -> Result<Presentation> {
         return Ok(p);
     }
     if deckcraft_pptx::is_encrypted(bytes) {
-        return Err(EngineError::Other(format!("{name} is password-protected. DeckCraft can't open password-protected presentations yet.")));
+        return Err(EngineError::Other(format!("{name} is password-protected. deckrt cannot open password-protected presentations.")));
     }
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".txt") || lower.ends_with(".md") {
@@ -159,7 +159,7 @@ fn open_other(name: &str, bytes: &[u8]) -> Result<Presentation> {
         }
         return Ok(p);
     }
-    Err(EngineError::Other(format!("{name}: not a presentation DeckCraft can read")))
+    Err(EngineError::Other(format!("{name}: not a presentation deckrt can read")))
 }
 
 pub fn add_opened(s: &mut Session, name: &str, path: Option<String>, p: Presentation) -> usize {
@@ -201,6 +201,7 @@ fn adopt_loaded(s: &mut Session, f: LoadedFile) -> Result<Value> {
     let keep_path = native && damaged.is_empty();
     let i = add_opened(s, &path, keep_path.then(|| path.clone()), doc);
     report_damage(s, &damaged)?;
+    super::interactive::after_open(s); // deckrt hook: an old sidecar next to the file
     let st = s.doc()?;
     Ok(json!({"document": i, "slides": st.doc.slides.len(), "missingFonts": st.missing_fonts, "damagedMedia": damaged}))
 }

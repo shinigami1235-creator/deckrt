@@ -52,6 +52,8 @@ pub struct Textures {
     smartart: HashMap<String, TextureHandle>,
     clock: u64,
     pub last_render_ms: f64,
+    /// deckrt hook: shapes the canvas draws itself (live 3D models), left out of the slide texture.
+    pub hide: Vec<ShapeId>,
 }
 
 impl Textures {
@@ -282,12 +284,13 @@ impl Textures {
         // The GPU's (or software fallback's) texture limit: a larger canvas texture panics in egui.
         let max_side = max_side(ctx);
         let want = fit_texture(deckcraft_render::pasteboard_region(size, scale, reach, visible), visible, max_side);
+        let hide_key = self.hide.iter().fold(0u64, |h, id| h.wrapping_mul(1_000_003).wrapping_add(id.0 as u64 + 1));
         let key = Key {
             slide: Arc::as_ptr(&slide) as usize,
             master: master.as_ref().map(|m| Arc::as_ptr(m) as usize).unwrap_or(0),
             size,
             edit,
-            extra: extra ^ grayscale as u64 ^ anim_key(anim),
+            extra: extra ^ grayscale as u64 ^ anim_key(anim) ^ hide_key.rotate_left(17), // deckrt hook: hide
             want,
             editing_text,
         };
@@ -309,6 +312,7 @@ impl Textures {
                 size: Some(region.size()),
                 state,
                 editing_text,
+                skip: &self.hide, // deckrt hook
                 ..Default::default()
             };
             deckcraft_render::render_slide_drawn(p, index, &opts)

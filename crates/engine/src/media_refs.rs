@@ -180,6 +180,8 @@ macro_rules! walkers {
             if let Some(t) = &$($m)? s.text {
                 text(t, f);
             }
+            // deckrt hook: media named inside `DECKRT.*` tag values.
+            tags(&$($m)? s.tags, f);
             link(&$($m)? s.click, f);
             link(&$($m)? s.hover, f);
             if let Some(d) = &$($m)? s.diagram {
@@ -266,11 +268,35 @@ macro_rules! walkers {
 /// Read every media id under a part of the model.
 pub mod visit {
     walkers!();
+
+    /// deckrt hook: the `"media:<id>"` tokens of `DECKRT.*` tag values.
+    pub fn tags(t: &[(String, String)], f: &mut F) {
+        for (n, v) in t {
+            if deckcraft_model::tag_media::carries_media(n) {
+                for id in deckcraft_model::tag_media::media_ids(v) {
+                    f(&id);
+                }
+            }
+        }
+    }
 }
 
 /// Rewrite every media id under a part of the model in place.
 pub mod visit_mut {
     walkers!(mut);
+
+    /// deckrt hook: the `"media:<id>"` tokens of `DECKRT.*` tag values, rewritten in place.
+    pub fn tags(t: &mut [(String, String)], f: &mut F) {
+        for (n, v) in t {
+            if deckcraft_model::tag_media::carries_media(n) {
+                *v = deckcraft_model::tag_media::remap(v, |id| {
+                    let mut m = id;
+                    f(&mut m);
+                    m
+                });
+            }
+        }
+    }
 }
 
 /// Every media reference in a presentation: slides, masters (with their layouts and themes),

@@ -31,6 +31,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => "Text Pane",
                 "thesaurus" => "Thesaurus",
                 "revisions" => "Revisions",
+                crate::deckrt::PANE => "Interactive object", // deckrt hook
                 _ => "Pane",
             };
             ui.horizontal(|ui| {
@@ -57,6 +58,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => smartart(app, ui),
                 "thesaurus" => thesaurus(app, ui),
                 "revisions" => revisions(app, ui),
+                crate::deckrt::PANE => crate::deckrt::pane::show(app, ui), // deckrt hook
                 _ => {}
             });
         });

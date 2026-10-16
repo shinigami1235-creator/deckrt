@@ -11,6 +11,8 @@ pub mod backstage;
 pub mod canvas;
 pub mod control;
 pub mod credits;
+/// deckrt hook: the interactive objects.
+pub mod deckrt;
 pub mod dialogs;
 pub mod doc_window;
 pub mod eyedropper;
@@ -191,7 +193,7 @@ fn command_for(purpose: FilePurpose, name: &str, bytes: &[u8]) -> Result<&'stati
         FilePurpose::Open => open_command(name),
         FilePurpose::Infer => infer_command(name, bytes),
     };
-    cmd.ok_or_else(|| format!("{name}: DeckCraft can't open this kind of file"))
+    cmd.ok_or_else(|| format!("{name}: deckrt can't open this kind of file"))
 }
 
 /// How long a transient status message stays visible.
@@ -220,6 +222,9 @@ pub struct Services {
     pub clipboard_set_html: Option<Box<dyn FnMut(&str, &str) -> bool>>,
     /// Audio output for media playback (cpal on desktop); without one media plays silently.
     pub audio_out: Option<Box<dyn deckcraft_media::AudioOut>>,
+    /// deckrt hook: a multi-select open dialog for a purpose (`pictures`, `model`) → paths in
+    /// the order chosen, empty when cancelled.
+    pub pick_open_many: Option<Box<dyn FnMut(&str) -> Vec<String>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -392,7 +397,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
         Some("Cmd+P"),
         "{layout?, perPage?, slides?, includeHidden?, frame?, paper?: letter|a4|legal|a3, orientation?: portrait|landscape}",
     ),
-    ("app.about", "About DeckCraft", None, "{}"),
+    ("app.about", "About deckrt", None, "{}"),
     ("app.palette", "Command Palette", Some("Cmd+Shift+P"), "{}"),
     ("app.preferences", "Preferences…", Some("Cmd+,"), "{}"),
     ("app.openDialog", "Open…", None, "{purpose?}"),
@@ -411,7 +416,6 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.qat", "Quick Access Toolbar", None, "{add: command id, params?, label?, icon?} | {remove: id, params?} | {reset: true} → [buttons]"),
     ("app.find", "Find…", Some("Cmd+F"), "{}"),
     ("app.replace", "Replace…", Some("Cmd+H"), "{}"),
-    ("app.links", "Community Links", None, "{}"),
 ];
 
 pub struct Perf {
@@ -513,6 +517,8 @@ pub struct SlideApp {
     next_file_id: u64,
     /// Picks and drops whose bytes have not arrived yet.
     pending_files: Vec<PendingFile>,
+    /// deckrt hook: the interactive objects' state.
+    pub deckrt: deckrt::State,
 }
 
 fn grid_options_touched(p: &Value) -> bool {
@@ -580,6 +586,7 @@ impl SlideApp {
             twisting: false,
             next_file_id: 1,
             pending_files: Vec::new(),
+            deckrt: deckrt::State::default(),
         }
     }
 
@@ -744,7 +751,7 @@ impl SlideApp {
             "deckcraft" => ("deckcraft", "deckcraft", false),
             "gif" => ("gif", "gif", false),
             other => {
-                self.set_status(format!("DeckCraft can't export “{other}”"));
+                self.set_status(format!("deckrt can't export “{other}”"));
                 return false;
             }
         };
@@ -1048,10 +1055,6 @@ impl SlideApp {
                 let d = p.get("id").and_then(Value::as_str).ok_or("missing `id`")?;
                 self.dialog = Some(dialogs::Dialog::new(d));
             }
-            "app.links" => {
-                use deckcraft_engine::links::*;
-                return Ok(json!({"discord": DISCORD, "website": WEBSITE, "apps": APPS, "appPage": APP_PAGE, "github": GITHUB}));
-            }
             _ => return Err(format!("unknown UI command `{id}`")),
         }
         Ok(Value::Null)
@@ -1305,7 +1308,7 @@ impl SlideApp {
     }
 
     /// Act on requests commands left for the UI.
-    fn drain_requests(&mut self) {
+    pub(crate) fn drain_requests(&mut self) {
         for r in std::mem::take(&mut self.session.ui_requests) {
             match r {
                 UiRequest::Dialog { id, params } => {
@@ -1537,6 +1540,7 @@ impl SlideApp {
         self.last_time = now;
         self.drain_control(ctx);
         self.poll_opening();
+        deckrt::logic(self); // deckrt hook
         if self.fonts_ready {
             self.drain_inbox();
         }
@@ -1786,6 +1790,7 @@ impl SlideApp {
             self.anim_preview = None;
             show::ui(self, ui);
             doc_window::show(self, &ctx);
+            deckrt::end_frame(self); // deckrt hook
             self.perf.frame_ms = now_ms() - t0;
             return;
         }
@@ -1843,6 +1848,7 @@ impl SlideApp {
         }
         self.drain_requests();
         doc_window::show(self, &ctx);
+        deckrt::end_frame(self); // deckrt hook
         self.perf.frame_ms = now_ms() - t0;
     }
 

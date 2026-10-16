@@ -13,6 +13,8 @@ pub mod format;
 pub mod ideas;
 pub mod insert;
 pub mod inspect;
+/// deckrt hook: the interactive objects' commands.
+pub mod interactive;
 pub mod media;
 pub mod merge;
 pub mod picture_style;
@@ -190,6 +192,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(artistic::specs());
         v.extend(zoom::specs());
         v.extend(compress::specs());
+        v.extend(interactive::specs()); // deckrt hook
         v
     })
 }

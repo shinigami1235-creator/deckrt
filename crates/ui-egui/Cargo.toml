@@ -8,6 +8,11 @@ description = "DeckCraft egui frontend (PowerPoint-style UI); swappable — noth
 [lints]
 workspace = true
 
+[features]
+default = []
+# deckrt: draw 3D models through wgpu (the desktop app); without it the software rasteriser draws them.
+gpu3d = ["dep:egui-wgpu", "deckcraft-model3d/gpu"]
+
 [dependencies]
 deckcraft-geom = { workspace = true }
 deckcraft-color = { workspace = true }
@@ -18,6 +23,10 @@ deckcraft-render = { workspace = true }
 deckcraft-anim = { workspace = true }
 deckcraft-engine = { workspace = true }
 deckcraft-media = { workspace = true }
+# deckrt
+deckcraft-interactive = { workspace = true }
+deckcraft-model3d = { workspace = true }
+egui-wgpu = { version = "0.36", optional = true }
 egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

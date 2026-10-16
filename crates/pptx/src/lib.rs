@@ -63,6 +63,12 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
     read::import(bytes)
 }
 
+/// deckrt: the file's own slide ids (`p:sldId/@id`) in slide order, as the earlier sidecar files
+/// name slides.
+pub fn file_slide_ids(bytes: &[u8]) -> Result<Vec<u32>, PptxError> {
+    read::file_slide_ids(bytes)
+}
+
 /// Read the theme of a `.thmx` file, or of a `.pptx` / `.potx`'s first master, with its media.
 pub fn import_theme(bytes: &[u8]) -> Result<(deckcraft_model::theme::Theme, Vec<deckcraft_model::MediaItem>), PptxError> {
     read::import_theme(bytes)

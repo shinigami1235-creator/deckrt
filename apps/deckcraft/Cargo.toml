@@ -5,14 +5,18 @@ edition.workspace = true
 license.workspace = true
 description = "DeckCraft desktop app"
 publish = false
-default-run = "deckcraft"
+default-run = "deckrt"
+
+[[bin]]
+name = "deckrt"
+path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
 deckcraft-engine = { workspace = true }
-deckcraft-ui-egui = { workspace = true }
+deckcraft-ui-egui = { workspace = true, features = ["gpu3d"] }
 deckcraft-media = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
 egui = { workspace = true }

@@ -1081,6 +1081,13 @@ impl Renderer {
                 let pf = deckcraft_model::style::PictureFill { media: *media, ..Default::default() };
                 paint::picture(ctx, f.pres, &pf, Rect::new(0.0, 0.0, w, h), m, None);
             }
+            // deckrt hook: a 3-D model shows its poster picture (the live model is drawn over it by
+            // the editor and the show).
+            ShapeKind::Model3d { poster: Some(media), .. } => {
+                ctx.set_transform(m);
+                let pf = deckcraft_model::style::PictureFill { media: *media, ..Default::default() };
+                paint::picture(ctx, f.pres, &pf, Rect::new(0.0, 0.0, w, h), m, None);
+            }
             ShapeKind::Media(mc) => {
                 ctx.set_transform(m);
                 let bounds = Rect::new(0.0, 0.0, w, h);

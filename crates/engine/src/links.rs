@@ -1,8 +1,9 @@
-//! Community and project links (shown in Help, About, the CLI and MCP).
+//! Project links and the name the app shows. This is a fork of DeckCraft (ArtCraft Team); the
+//! product name is a placeholder until one is chosen.
 
-pub const DISCORD: &str = "https://discord.gg/artcraft";
-pub const WEBSITE: &str = "https://getartcraft.com/";
-pub const APPS: &str = "https://getartcraft.com/apps";
-pub const APP_PAGE: &str = "https://getartcraft.com/apps/deckcraft";
-pub const GITHUB: &str = "https://github.com/storytold/deckcraft";
+/// The name shown in window titles, dialogs and messages.
+pub const APP_NAME: &str = "deckrt";
+/// The upstream project this fork is based on.
+pub const UPSTREAM: &str = "https://github.com/storytold/deckcraft";
+pub const GITHUB: &str = UPSTREAM;
 pub const ISSUES: &str = "https://github.com/storytold/deckcraft/issues";

@@ -457,7 +457,8 @@ fn write_model_part(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape, rid
     w.open0("p:nvContentPartPr");
     cnvpr(w, x, o, id, s);
     w.empty0("p:cNvContentPartPr");
-    w.empty0("p:nvPr");
+    // deckrt hook: a model's tags (its interactive settings) travel in its nvPr like a picture's.
+    nv_pr(w, x, o, s);
     w.close("p:nvContentPartPr");
     if let Some(xf) = &s.xfrm {
         dml::xfrm(w, "p:xfrm", xf, None);

@@ -190,15 +190,30 @@ fn choice_has_model3d(el: &El, rels: &Rels) -> bool {
 }
 
 /// Add-in tags named by `holder`'s `p:custDataLst`: the name/value pairs of each tags part.
-pub fn tags(imp: &Imp, part: &Part, holder: &El) -> Vec<(String, String)> {
+pub fn tags(imp: &mut Imp, part: &Part, holder: &El) -> Vec<(String, String)> {
     let Some(list) = holder.child("custDataLst") else { return vec![] };
     let mut out = Vec::new();
     for t in list.children_named("tags").take(100) {
-        let Some(doc) = t.attr("r:id").and_then(|id| part.rels.get(id)).and_then(|r| imp.pkg.xml(&r.target)) else { continue };
+        let Some(target) = t.attr("r:id").and_then(|id| part.rels.get(id)).map(|r| r.target.clone()) else { continue };
+        let pkg: &Package = imp.pkg;
+        let Some(doc) = pkg.xml(&target) else { continue };
+        // deckrt hook: a `DECKRT.*` tag names media as `"rel:<rId>"` of the tags part; those
+        // become `"media:<id>"` again (an unresolvable one stays as written and reads as missing).
+        let mut tag_rels: Option<Rels> = None;
         for tag in doc.root.children_named("tag").take(10_000) {
-            if let Some(name) = tag.attr("name") {
-                out.push((name.to_string(), tag.attr("val").unwrap_or("").to_string()));
-            }
+            let Some(name) = tag.attr("name") else { continue };
+            let val = tag.attr("val").unwrap_or("");
+            let val = if deckcraft_model::tag_media::carries_media(name) {
+                let rels = tag_rels.get_or_insert_with(|| pkg.rels(&target));
+                deckcraft_model::tag_media::rewrite(val, "rel", |rid| {
+                    let r = rels.get(rid)?;
+                    let id = if r.external { imp.media_link(&r.target) } else { imp.media_for(&r.target)? };
+                    Some(("media".to_string(), id.0.to_string()))
+                })
+            } else {
+                val.to_string()
+            };
+            out.push((name.to_string(), val));
         }
     }
     out
@@ -386,6 +401,25 @@ pub fn import_theme(bytes: &[u8]) -> Result<(deckcraft_model::theme::Theme, Vec<
     Ok((theme, imp.media))
 }
 
+/// deckrt hook: the file's own slide ids (`p:sldId/@id`) in slide order, for the slides
+/// [`import`] reads; a deck's earlier sidecar names slides by these.
+pub fn file_slide_ids(bytes: &[u8]) -> Result<Vec<u32>, PptxError> {
+    let pkg = Package::open(bytes)?;
+    let root_rels = pkg.rels("");
+    let pres_path = root_rels.first_of("officeDocument").map(|r| r.target.clone()).unwrap_or_else(|| "ppt/presentation.xml".into());
+    let pres_doc = load(&pkg, &pres_path).ok_or_else(|| PptxError::NotPptx(format!("missing or unreadable {pres_path}")))?;
+    let pres_part = Part::new(&pkg, &pres_path, &pres_doc);
+    let Some(list) = pres_doc.root.child("sldIdLst") else { return Ok(vec![]) };
+    Ok(list
+        .children_named("sldId")
+        .take(10_000)
+        .filter_map(|s| {
+            let path = pres_part.rels.target(s.attr("r:id").unwrap_or(""))?;
+            pkg.xml(path).is_some().then(|| s.u32("id").unwrap_or(0))
+        })
+        .collect())
+}
+
 pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
     let pkg = Package::open(bytes)?;
     let root_rels = pkg.rels("");
@@ -562,7 +596,7 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
             p.raw_ext = Some(kept);
         }
     }
-    p.tags = tags(&imp, &pres_part, pres_el);
+    p.tags = tags(&mut imp, &pres_part, pres_el);
     // Custom shows.
     if let Some(l) = pres_el.child("custShowLst") {
         for cs in l.children_named("custShow") {

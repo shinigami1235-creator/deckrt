@@ -188,11 +188,24 @@ impl Exp<'_> {
         let name = format!("ppt/tags/tag{}.xml", self.n_tags);
         let mut w = W::new();
         root_open(&mut w, "p:tagLst", A::new());
+        // deckrt hook: a `DECKRT.*` tag names media as `"media:<id>"`; each becomes a
+        // relationship of the tags part so the picture or model is kept in the package.
+        let mut to = Out::new(&name);
         for (n, v) in tags.iter().take(10_000) {
-            w.empty("p:tag", A::new().a("name", n).a("val", v));
+            let v = if deckcraft_model::tag_media::carries_media(n) {
+                deckcraft_model::tag_media::rewrite(v, "media", |id| {
+                    let id = MediaId(id.parse::<u32>().ok()?);
+                    let kind = if self.p.media(id).is_some_and(|m| m.content_type == "model/gltf-binary") { opc::RT_MODEL3D } else { "image" };
+                    self.media_rel(&mut to, id, kind).map(|rid| ("rel".to_string(), rid))
+                })
+            } else {
+                v.clone()
+            };
+            w.empty("p:tag", A::new().a("name", n).a("val", &v));
         }
         w.close("p:tagLst");
         self.pkg.xml_part(&name, CT_TAGS, w.finish());
+        self.pkg.rels(&name, &to.rels);
         o.rels.add_new("tags", &opc::relative(&o.name, &name), false)
     }
     /// An unchanged Office 2016 chart's `chartEx` part and its relationship id.
