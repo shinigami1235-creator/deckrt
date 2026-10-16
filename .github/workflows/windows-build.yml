@@ -55,9 +55,26 @@ jobs:
         with:
           workspaces: deckrt -> target
 
+      # The compiler's errors are repeated as annotations, which the GitHub API gives back even
+      # when the full log cannot be fetched.
       - name: Build the release exe
         working-directory: deckrt
-        run: cargo build --release --locked -p deckcraft -p deckcraft-cli --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p deckcraft -p deckcraft-cli --target x86_64-pc-windows-msvc 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            $lines = @(Get-Content build.log)
+            $found = 0
+            for ($i = 0; $i -lt $lines.Count -and $found -lt 10; $i++) {
+              if ($lines[$i] -match '^error') {
+                $end = [Math]::Min($i + 8, $lines.Count - 1)
+                $text = (($lines[$i..$end] | ForEach-Object { $_.Trim() }) -join ' | ')
+                Write-Output "::error::$text"
+                $found++
+              }
+            }
+            exit 1
+          }
 
       - name: Check the exe is a Windows GUI program and the CLI a console one
         working-directory: deckrt
@@ -78,7 +95,22 @@ jobs:
       # Linux and compiled only here, so its tests run here.
       - name: Run the tests that matter on Windows
         working-directory: deckrt
-        run: cargo test --release --locked --target x86_64-pc-windows-msvc -p deckcraft-phones -p deckcraft-show-ext -p deckcraft-interactive -p deckcraft-model3d -p deckcraft
+        shell: pwsh
+        run: |
+          cargo test --release --locked --target x86_64-pc-windows-msvc -p deckcraft-phones -p deckcraft-show-ext -p deckcraft-interactive -p deckcraft-model3d -p deckcraft 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) {
+            $lines = @(Get-Content test.log)
+            $found = 0
+            for ($i = 0; $i -lt $lines.Count -and $found -lt 10; $i++) {
+              if ($lines[$i] -match '^(error|---- .* stdout ----|test result: FAILED)') {
+                $end = [Math]::Min($i + 8, $lines.Count - 1)
+                $text = (($lines[$i..$end] | ForEach-Object { $_.Trim() }) -join ' | ')
+                Write-Output "::error::$text"
+                $found++
+              }
+            }
+            exit 1
+          }
 
       - name: Assemble the zip
         working-directory: deckrt
