@@ -2,15 +2,18 @@
 <!--
   deckrt MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by .github/workflows/windows-build.yml:
 
-    wix build deckrt.wxs -arch x64 -d Version=0.7.0 -d BinDir=... -d IconPath=... -d StartBat=... -o out.msi
+    wix build deckrt.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
+        -d Version=0.7.0 -d BinDir=... -d IconPath=... -d StartBat=... -d LicenseRtf=license.rtf -o out.msi
 
-  Per-machine install into Program Files, a Start Menu shortcut, and deckrt offered under
+  Per-machine install into Program Files, a Start Menu and a desktop shortcut, a Finish page
+  that can start deckrt, and deckrt offered under
   "Open with" for .pptx/.potx/.ppsx/.deckcraft without taking over the default app for them.
 
   The UpgradeCode is deckrt's own (not DeckCraft's), fixed from here on so later versions replace
   earlier ones; never change it.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="deckrt"
       Manufacturer="deckrt"
@@ -32,6 +35,19 @@
       <Directory Id="INSTALLFOLDER" Name="deckrt" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- Screens: welcome with the licence, progress, and a Finish page whose box starts deckrt. -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch deckrt" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#DeckrtExe]" />
+    <CustomAction Id="LaunchDeckrt" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec" Impersonate="yes" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchDeckrt"
+          Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
 
     <Feature Id="Main" Title="deckrt" Level="1">
       <ComponentGroupRef Id="DeckrtFiles" />
@@ -55,6 +71,12 @@
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".potx" Value="" Type="string" />
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\deckrt.exe\SupportedTypes" Name=".ppsx" Value="" Type="string" />
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\deckrt.exe" Value="[#DeckrtExe]" Type="string" />
+      </Component>
+
+      <Component Id="DeckrtDesktopShortcut" Directory="DesktopFolder" Guid="6B0E2F4A-9C51-4E7D-8A3B-2F61C0D4E915">
+        <Shortcut Id="DesktopShortcut" Name="deckrt" Description="deckrt presentations with interactive objects"
+            Target="[#DeckrtExe]" WorkingDirectory="INSTALLFOLDER" Icon="DeckrtIcon.ico" IconIndex="0" />
+        <RegistryValue Root="HKLM" Key="Software\deckrt" Name="DesktopShortcut" Value="1" Type="integer" KeyPath="yes" />
       </Component>
 
       <Component Id="DeckrtCli">
