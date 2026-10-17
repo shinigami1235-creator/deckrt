@@ -22,6 +22,11 @@ current) does not apply here.
 | `crates/engine/src/cmd/interactive.rs` | The engine commands: insert, update (with `targetSlides` to name a poll's slides by index), add/remove picture, replace model, delete, list, import sidecar, refresh poster. All undoable. |
 | `crates/model/src/tag_media.rs` | `"media:<id>"` tokens inside `DECKRT.*` tag values, so the PPTX writer and the media walker can find pictures named in the JSON |
 | `crates/ui-egui/src/deckrt/` | The editor side: ribbon group (`mod.rs`), settings pane (`pane.rs`), canvas drawing (`canvas.rs`), the live model view (`model_view.rs`, `gpu.rs`), the dialogs; and the show side: `show.rs` (object states, drawing over the slide, pointer and keys, presenter rows, displays), `phones.rs` (the phones during a show, the QR, the Phones section), `pictures.rs` (media as textures) |
+| `crates/model3d/src/convert.rs` | `.obj` (with its `.mtl` and textures) and `.stl` to `.glb` on insert and Replace Model; `.fbx` is refused with a pointer to Blender's glTF export |
+| `crates/captions` | Live captions: model files and their download (curl), settings, phrase cutting, and with the `engine` feature the microphone (cpal) and recogniser (whisper.cpp through whisper-rs) threads |
+| `crates/engine/src/cmd/deckrt_check.rs` | `deckrt.check`: the check before a talk (media, fonts, overflow, off-slide shapes, objects with missing files, 4:3, file size), each finding with its fix as commands |
+| `crates/engine/src/cmd/deckrt_privacy.rs` | `deckrt.privacy` (the check before sharing), `deckrt.applyCrops`, `deckrt.stripMetadata`, `deckrt.removeNotes`, `deckrt.blurArea` |
+| `crates/ui-egui/src/deckrt/check.rs`, `privacy.rs`, `captions.rs`, `questions.rs` | Their windows and buttons; Blur Area's drag; the caption band; questions from phones |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
 
@@ -89,6 +94,10 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `apps/deckcraft/Cargo.toml`, `build.rs`, `src/main.rs` | the binary is `deckrt`; Windows resources; `pick_open_many` and the `model` purpose; the wgpu device is handed to `deckrt::gpu::Gpu` |
 | `apps/deckcraft-cli` | the `links` subcommand is gone |
 | `assets/app-icon/*`, `docs/brand/*` | the fork's own icon; the ArtCraft marks are removed |
+| `crates/engine/src/cmd/mod.rs` (round 3) | `pub mod deckrt_check; pub mod deckrt_privacy;` and their `specs()` |
+| `crates/ui-egui/src/lib.rs` (round 3) | `start_show` calls `deckrt::check::gate` first: the check opens instead of the show when it finds a problem |
+| `crates/ui-egui/src/ribbon.rs` (round 3) | Check Deck and Live Captions on the Slide Show tab; Check Before Sharing and Blur Area on the Review tab |
+| `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
 ## Decisions made during the build
@@ -125,6 +134,22 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   FORK_REPORT.md).
 - `interactive.update` takes `targetSlides: [index | null]` for a poll, so the CLI, the control
   channel and tests can set the winning slides without knowing the `DECKRT.SLIDE` keys.
+
+- The check before a talk runs on Present only when the deck changed since it last passed, and
+  only stops the show for problems; notes (text past its box, 4:3) don't stop it.
+- Captions run on the laptop, never online. The model (base 150 MB or small 490 MB from
+  Hugging Face's whisper.cpp files) is fetched once with Windows' own `curl.exe` into
+  `<settings>/speech/`. The recogniser gets the slide's words as its prompt so terms like
+  "fibrillin" come out right. `DECKRT_CAPTIONS_TEST=<file>` plays lines from a text file instead
+  of the microphone, which is how the container tests the band, presenter controls and phones.
+- Blur Area pixelates then blurs the dragged part and saves the picture as new media, so the
+  original pixels leave the file on save. Undo brings them back until then.
+- Strip Photo Details removes JPEG APP1/APP13/COM and PNG text/eXIf blocks byte by byte, without
+  re-encoding, so the picture itself is unchanged.
+- Patient identifiers the sharing check looks for: HN, MRN, DOB labels and 13-digit IDs, in slide
+  text and notes. It points at them; it doesn't change text on its own.
+- Questions from phones: five waiting per phone, 300 per show, same question twice from one
+  phone refused. The presenter shows one at a time on the screen, above the caption band.
 
 ## PowerPoint feel: next run
 

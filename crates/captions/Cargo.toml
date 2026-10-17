@@ -1,0 +1,21 @@
+[package]
+name = "deckcraft-captions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "deckrt: live captions from the microphone, offline, with whisper.cpp"
+
+[lints]
+workspace = true
+
+[features]
+default = ["engine"]
+# The recogniser and the microphone. Off on the web.
+engine = ["dep:whisper-rs", "dep:cpal"]
+
+[dependencies]
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+whisper-rs = { version = "0.16", optional = true }
+cpal = { version = "0.16", optional = true }

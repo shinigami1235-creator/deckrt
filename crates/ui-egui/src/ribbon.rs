@@ -2064,6 +2064,7 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
         }
         big(app, ui, Icon::CustomShow, "Custom\nShow", "app.dialog", json!({"id": "customShow"}));
         crate::deckrt::check::ribbon_button(app, ui); // deckrt hook
+        crate::deckrt::captions::ribbon_button(app, ui); // deckrt hook
     });
     group(ui, |ui| {
         big(app, ui, Icon::SetUpShow, "Set Up\nSlide Show", "app.dialog", json!({"id": "setupShow"}));
@@ -2145,6 +2146,7 @@ fn review(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         big(app, ui, Icon::Accessibility, "Check\nAccessibility", "app.dialog", json!({"id": "accessibility"}));
     });
+    crate::deckrt::privacy::ribbon_group(app, ui); // deckrt hook
     group(ui, |ui| {
         let r = big_button(ui, Icon::Translate, "Translate", false);
         let _ = r.on_hover_text("Translation needs a language model (not bundled)");

@@ -212,7 +212,8 @@ pub fn section(ui: &mut Ui, qs: &mut Questions) -> bool {
 }
 
 /// The question on the audience screen: a band across the bottom of the slide.
-pub fn draw_on_screen(painter: &egui::Painter, slide: Rect, q: &Question) {
+/// `below` is the height taken at the bottom of the slide already (the caption band).
+pub fn draw_on_screen(painter: &egui::Painter, slide: Rect, q: &Question, below: f32) {
     let size = (slide.height() * 0.034).clamp(14.0, 44.0);
     let pad = size * 0.6;
     let width = slide.width() * 0.86;
@@ -221,7 +222,7 @@ pub fn draw_on_screen(painter: &egui::Painter, slide: Rect, q: &Question) {
     let meta = format!("Question from {who}{}", if q.votes.is_empty() { String::new() } else { format!(" · {} backed it", q.votes.len()) });
     let meta_g = painter.layout_no_wrap(meta, FontId::proportional(size * 0.62), Color32::from_gray(200));
     let h = body.size().y + meta_g.size().y + pad * 2.0 + size * 0.25;
-    let rect = Rect::from_center_size(pos2(slide.center().x, slide.max.y - h / 2.0 - slide.height() * 0.04), vec2(width, h));
+    let rect = Rect::from_center_size(pos2(slide.center().x, slide.max.y - below - h / 2.0 - slide.height() * 0.04), vec2(width, h));
     painter.rect_filled(rect, CornerRadius::same(10), Color32::from_rgba_unmultiplied(16, 22, 34, 235));
     painter.galley(rect.min + vec2(pad, pad), meta_g.clone(), Color32::from_gray(200));
     painter.galley(rect.min + vec2(pad, pad + meta_g.size().y + size * 0.25), body, Color32::WHITE);

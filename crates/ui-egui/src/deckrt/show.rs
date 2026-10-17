@@ -98,6 +98,10 @@ pub struct Ext {
     /// A web popup opened in the browser already, so it is not opened twice.
     opened_web: Vec<u32>,
     pub phones: Option<Phones>,
+    /// Live captions for this show.
+    pub captions: Option<super::captions::Live>,
+    /// Captions were started (or failed) for this show.
+    pub captions_tried: bool,
     /// The QR column beside the slide on the audience screen.
     pub qr_shown: bool,
     /// A phone's pointer, in slide units.
@@ -139,6 +143,8 @@ impl Default for Ext {
             zoom_owner: None,
             opened_web: vec![],
             phones: None,
+            captions: None,
+            captions_tried: false,
             qr_shown: false,
             pointer: None,
             ink: vec![],
@@ -631,9 +637,11 @@ pub fn draw(
         let pts: Vec<Pos2> = s.points.iter().map(|p| map.to_screen(p[0] * map.sw, p[1] * map.sh)).collect();
         painter.add(egui::Shape::line(pts, Stroke::new(ink_w, s.color)));
     }
-    // The question the presenter put on the screen.
+    // Live captions along the bottom of the audience screen, and the question the presenter put
+    // on the screen above them.
+    let below = if role == Role::Audience { super::captions::draw(painter, map.srect, ext.captions.as_ref(), now) } else { 0.0 };
     if let Some(q) = ext.phones.as_ref().and_then(|p| p.questions.shown_question()) {
-        super::questions::draw_on_screen(painter, map.srect, q);
+        super::questions::draw_on_screen(painter, map.srect, q, below);
     }
     // A phone's pointer.
     if let Some([x, y]) = ext.pointer {
@@ -1562,11 +1570,15 @@ pub fn presenter_builder(show: &Show) -> egui::ViewportBuilder {
 
 /// The display picker and Swap in the presenter window's toolbar.
 pub fn presenter_toolbar(ui: &mut Ui, show: &mut Show) {
+    dark_widgets(ui);
+    if show.ext.captions.is_some() {
+        ui.separator();
+        super::captions::presenter_controls(ui, show);
+    }
     if show.ext.displays.len() < 2 {
         return;
     }
     let ctx = ui.ctx().clone();
-    dark_widgets(ui);
     ui.separator();
     dim(ui, "Audience on");
     let current = show.ext.audience.unwrap_or(0);
@@ -1636,6 +1648,7 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
         }
         show.ext.phones = Some(phones);
     }
+    super::captions::logic(app, show, ctx, doc, now);
     let blackout = show.blank.is_some();
     let Ext { phones, states, pointer, ink, changed_at, .. } = &mut show.ext;
     if let Some(ph) = phones.as_mut()

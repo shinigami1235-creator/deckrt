@@ -96,6 +96,8 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
 .zoombox img { display: block; width: 100%; }
 .zoomrow { display: flex; gap: 6px; margin-top: 8px; }
 .zoomrow button { margin: 0; }
+.caption { position: sticky; top: 56px; z-index: 4; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; font-size: 18px; line-height: 1.35; }
+.caption .off { float: right; margin: 0 0 0 8px; width: auto; min-height: 32px; padding: 2px 10px; font-size: 13px; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -120,6 +122,9 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
     <button type="button" id="tab-questions">Questions<span class="badge" id="q-badge" hidden></span></button>
     <button type="button" id="tab-slides">Slides</button>
   </nav>
+
+  <div class="caption" id="caption" hidden><button type="button" class="off quiet" id="caption-off">Hide</button><span id="caption-text"></span></div>
+  <p class="muted" id="caption-show-p" hidden><button type="button" class="quiet" id="caption-on">Show captions</button></p>
 
   <div class="wake" id="wake" hidden></div>
 
@@ -545,6 +550,13 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
       $("viewer-ask").hidden = role !== "none";
     }
 
+    // Live captions, when the presenter sends them; hiding them is this phone's own choice.
+    var cap = show && show.caption;
+    var capOff = false;
+    try { capOff = localStorage.getItem("deckrt_captions_off") === "1"; } catch (e) {}
+    $("caption").hidden = !cap || capOff;
+    $("caption-show-p").hidden = !cap || !capOff;
+    if (cap) $("caption-text").textContent = cap;
     renderQuestions(show, you);
     renderSlides(show);
     // Tabs: Now shows what the screen asks for; the other two are the phone's own.
@@ -557,6 +569,8 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
     $("tab-slides").dataset.on = String(st.tab === "slides");
   }
 
+  $("caption-off").addEventListener("click", function () { try { localStorage.setItem("deckrt_captions_off", "1"); } catch (e) {} render(); });
+  $("caption-on").addEventListener("click", function () { try { localStorage.removeItem("deckrt_captions_off"); } catch (e) {} render(); });
   function setTab(t) { st.tab = t; if (t !== "slides") st.one = null; render(); window.scrollTo(0, 0); }
   $("tab-now").addEventListener("click", function () { setTab("now"); });
   $("tab-questions").addEventListener("click", function () { setTab("questions"); });

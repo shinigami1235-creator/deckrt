@@ -41,6 +41,9 @@ fn selected_model(app: &SlideApp, xf: Xf) -> Option<(u32, Rect)> {
 /// handle orbits it, the wheel over a selected model zooms it. Every primary press is
 /// remembered as the last click. Returns whether the event was consumed.
 pub fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
+    if super::privacy::pointer(app, ui, resp, xf) {
+        return true;
+    }
     let pos = resp.interact_pointer_pos().or(resp.hover_pos());
     if resp.hovered()
         && ui.input(|i| i.pointer.primary_pressed())
@@ -133,6 +136,7 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
             badge(painter, rect, &o, &t);
         }
     }
+    super::privacy::draw(app, painter, xf);
 }
 
 /// The round handle a selected model is turned with.

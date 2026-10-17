@@ -148,6 +148,8 @@ pub struct Phones {
     pub questions: super::questions::Questions,
     /// Slides shown so far (1-based), which phones may look back at.
     seen: BTreeSet<u32>,
+    /// The live caption phones show.
+    caption: Option<String>,
 }
 
 impl Phones {
@@ -203,6 +205,7 @@ impl Phones {
             inputs: vec![],
             questions: Default::default(),
             seen: BTreeSet::new(),
+            caption: None,
         }
     }
 
@@ -655,6 +658,7 @@ impl Phones {
             "seen": self.seen.iter().copied().filter(|n| self.slides_ready.is_some_and(|r| *n <= r)).collect::<Vec<_>>(),
             "questions": self.questions.for_phones(),
             "questions_open": !self.questions.closed,
+            "caption": self.caption,
         })
     }
 
@@ -723,6 +727,11 @@ impl Phones {
     }
 
     /// Everyone hears their standing again after the queue moved; `logic` sends it.
+    /// The live caption for the phones; they hear it with the next show message.
+    pub fn set_caption(&mut self, text: Option<String>) {
+        self.caption = text;
+    }
+
     /// Something every phone sees changed outside a message (the presenter's Questions buttons).
     pub fn changed(&mut self) {
         self.last_show.clear();

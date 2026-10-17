@@ -275,6 +275,7 @@ fn main() -> eframe::Result {
                 app.deckrt.gpu = Some(deckcraft_ui_egui::deckrt::gpu::Gpu::new(rs));
             }
             app.deckrt.list_displays = Some(Box::new(deckcraft_show_ext::displays::list));
+            app.deckrt.settings_dir = config_dir(); // deckrt: the speech model for live captions
             // AutoRecover: reopen what a previous run left unsaved, then keep it current.
             if std::env::var_os("DECKCRAFT_NO_RECOVERY").is_none() {
                 app.session.recovery_dir = deckcraft_engine::recovery::default_dir();

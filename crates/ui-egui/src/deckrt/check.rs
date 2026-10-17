@@ -11,7 +11,7 @@ pub const DIALOG: &str = "deckrt.check";
 
 /// A button with a visible frame: the app's buttons are frameless until hovered, and here a
 /// fix has to read as something to click.
-fn framed(ui: &Ui, text: &str, min_w: f32) -> egui::Button<'static> {
+pub fn framed(ui: &Ui, text: &str, min_w: f32) -> egui::Button<'static> {
     let v = ui.visuals();
     egui::Button::new(text.to_string())
         .fill(v.widgets.inactive.weak_bg_fill)
@@ -70,6 +70,8 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> 
     let result = d.params["result"].clone();
     let items: Vec<Value> = result["items"].as_array().cloned().unwrap_or_default();
     let problems = result["problems"].as_u64().unwrap_or(0);
+    let when = d.params["when"].as_str().unwrap_or("the talk").to_string();
+    let cmd = d.params["cmd"].as_str().unwrap_or("deckrt.check").to_string();
     let notes = result["notes"].as_u64().unwrap_or(0);
     ui.set_min_width(560.0);
     ui.set_max_width(640.0);
@@ -77,8 +79,8 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> 
     let summary = match (problems, notes) {
         (0, 0) => "Nothing to fix.".to_string(),
         (0, n) => format!("No problems. {} to look at.", plural(n, "note", "notes")),
-        (p, 0) => format!("{} to fix before the talk.", plural(p, "problem", "problems")),
-        (p, n) => format!("{} to fix before the talk, and {}.", plural(p, "problem", "problems"), plural(n, "note", "notes")),
+        (p, 0) => format!("{} to fix before {when}.", plural(p, "problem", "problems")),
+        (p, n) => format!("{} to fix before {when}, and {}.", plural(p, "problem", "problems"), plural(n, "note", "notes")),
     };
     ui.label(RichText::new(summary).strong());
     ui.add_space(6.0);
@@ -143,7 +145,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> 
             rerun = true;
         }
     });
-    if rerun && let Ok(r) = app.session.execute("deckrt.check", &json!({})) {
+    if rerun && let Ok(r) = app.session.execute(&cmd, &json!({})) {
         d.params["result"] = r;
     }
     if let Some((slide, shape)) = go {

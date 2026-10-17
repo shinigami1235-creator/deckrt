@@ -16,6 +16,7 @@ pub mod inspect;
 /// deckrt hook: the interactive objects' commands.
 pub mod interactive;
 pub mod deckrt_check; // deckrt: the check before a talk
+pub mod deckrt_privacy; // deckrt: the check before sharing
 pub mod media;
 pub mod merge;
 pub mod picture_style;
@@ -195,6 +196,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(compress::specs());
         v.extend(interactive::specs()); // deckrt hook
         v.extend(deckrt_check::specs()); // deckrt hook
+        v.extend(deckrt_privacy::specs()); // deckrt hook
         v
     })
 }
