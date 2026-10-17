@@ -392,8 +392,8 @@ impl Renderer {
             return None;
         }
         let recreated = self.target(slot, (width, height));
-        let Some(gm) = self.models.get(&key) else { return None };
-        let Some(t) = self.targets.get(&slot) else { return None };
+        let gm = self.models.get(&key)?;
+        let t = self.targets.get(&slot)?;
         let aspect = t.size.0 as f32 / t.size.1 as f32;
         let model = &gm.model;
         let mvp = view.mvp(model, aspect);

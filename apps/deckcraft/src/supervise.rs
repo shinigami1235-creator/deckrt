@@ -223,7 +223,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("deckrt-supervise-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let ready = dir.join("ready");
-        let args = vec!["--exact".to_string(), "supervise::tests::a_child_that_dies_before_its_first_frame_counts_as_failed_and_one_that_came_up_does_not".to_string()];
+        let args = vec![
+            "--exact".to_string(),
+            "supervise::tests::a_child_that_dies_before_its_first_frame_counts_as_failed_and_one_that_came_up_does_not".to_string(),
+        ];
         let run = |mode: &str, attempt: Attempt| run_child_with(&exe, &args, attempt, &ready, &[("DECKRT_FAKE_CHILD", mode)]);
         assert!(matches!(run("crash", ATTEMPTS[0]), Outcome::FailedToStart(_)));
         assert_eq!(run("up-then-crash", ATTEMPTS[1]), Outcome::Ran(3));

@@ -280,7 +280,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                     ui.horizontal(|ui| {
                         ui.scope(|ui| {
                             ui.set_max_width((ui.available_width() - 130.0).max(40.0));
-                            ui.add(egui::Label::new(if media.0 == MediaId(0) { "No picture yet".to_string() } else { media_name(app, media.0) }).truncate());
+                            ui.add(
+                                egui::Label::new(if media.0 == MediaId(0) { "No picture yet".to_string() } else { media_name(app, media.0) })
+                                    .truncate(),
+                            );
                         });
                         if ui.button("Choose picture…").clicked()
                             && let Some(path) = pick_pictures(app, false).into_iter().next()
@@ -336,7 +339,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                     // The tick marks the right answer; a dim one is the button to make it so.
                     let right = c.correct == Some(i);
                     let tick = RichText::new("✓").color(if right { t.accent_text } else { t.text_dim });
-                    let r = ui.add(egui::Button::new(tick).fill(if right { t.accent } else { Color32::TRANSPARENT }).min_size(egui::vec2(22.0, 20.0)));
+                    let r =
+                        ui.add(egui::Button::new(tick).fill(if right { t.accent } else { Color32::TRANSPARENT }).min_size(egui::vec2(22.0, 20.0)));
                     if r.on_hover_text(if right { "The right answer" } else { "Make this the right answer" }).clicked() && !right {
                         c.correct = Some(i);
                         changed = true;
@@ -581,10 +585,13 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                     changed = true;
                 }
             });
-            hint(ui, match c.camera {
-                Some(_) => "The saved view. Automatic frames the whole model.",
-                None => "Automatic: the whole model framed from the front.",
-            });
+            hint(
+                ui,
+                match c.camera {
+                    Some(_) => "The saved view. Automatic frames the whole model.",
+                    None => "Automatic: the whole model framed from the front.",
+                },
+            );
             label(ui, "Turns together with");
             if let Some(v) = text_field(ui, fid("link"), &c.link_group, false) {
                 c.link_group = v.trim().to_string();
@@ -672,7 +679,12 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 .session
                 .active()
                 .map(|st| {
-                    st.doc.slides.iter().enumerate().map(|(i, s)| (i, format!("Slide {} {}", i + 1, s.title().chars().take(30).collect::<String>()))).collect()
+                    st.doc
+                        .slides
+                        .iter()
+                        .enumerate()
+                        .map(|(i, s)| (i, format!("Slide {} {}", i + 1, s.title().chars().take(30).collect::<String>())))
+                        .collect()
                 })
                 .unwrap_or_default();
             while c.targets.len() < c.options.len() {
@@ -680,7 +692,8 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
             }
             for i in 0..c.options.len() {
                 let cur = c.targets.get(i).cloned().flatten();
-                let cur_idx = cur.as_deref().and_then(|k| app.session.active().and_then(|st| deckcraft_engine::cmd::interactive::slide_of_key(&st.doc, k)));
+                let cur_idx =
+                    cur.as_deref().and_then(|k| app.session.active().and_then(|st| deckcraft_engine::cmd::interactive::slide_of_key(&st.doc, k)));
                 let text = match cur_idx {
                     Some(i) => slides.get(i).map(|(_, n)| n.clone()).unwrap_or_else(|| "No slide".into()),
                     None if cur.is_some() => "A slide that is gone".into(),
@@ -691,23 +704,26 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                         ui.set_max_width((ui.available_width() * 0.4).max(40.0));
                         ui.add(egui::Label::new(c.options.get(i).cloned().unwrap_or_default()).truncate());
                     });
-                    egui::ComboBox::from_id_salt(fid(&format!("target{i}"))).width((ui.available_width() - 8.0).max(80.0)).selected_text(text).show_ui(ui, |ui| {
-                        if ui.selectable_label(cur.is_none(), "No slide").clicked() {
-                            c.targets[i] = None;
-                            changed = true;
-                        }
-                        for (si, name) in &slides {
-                            if ui.selectable_label(cur_idx == Some(*si), name).clicked() {
-                                match deckcraft_engine::cmd::interactive::slide_key(&mut app.session, *si) {
-                                    Ok(k) => {
-                                        c.targets[i] = Some(k);
-                                        changed = true;
+                    egui::ComboBox::from_id_salt(fid(&format!("target{i}")))
+                        .width((ui.available_width() - 8.0).max(80.0))
+                        .selected_text(text)
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_label(cur.is_none(), "No slide").clicked() {
+                                c.targets[i] = None;
+                                changed = true;
+                            }
+                            for (si, name) in &slides {
+                                if ui.selectable_label(cur_idx == Some(*si), name).clicked() {
+                                    match deckcraft_engine::cmd::interactive::slide_key(&mut app.session, *si) {
+                                        Ok(k) => {
+                                            c.targets[i] = Some(k);
+                                            changed = true;
+                                        }
+                                        Err(e) => app.set_status(e.to_string()),
                                     }
-                                    Err(e) => app.set_status(e.to_string()),
                                 }
                             }
-                        }
-                    });
+                        });
                 });
             }
         }

@@ -18,7 +18,15 @@ pub mod gpu {
             false
         }
         pub fn load(&mut self, _key: u64, _model: Arc<deckcraft_model3d::Model>) {}
-        pub fn draw(&mut self, _slot: u64, _key: u64, _view: &deckcraft_model3d::View, _w: u32, _h: u32, _hidden: &[String]) -> Option<egui::TextureId> {
+        pub fn draw(
+            &mut self,
+            _slot: u64,
+            _key: u64,
+            _view: &deckcraft_model3d::View,
+            _w: u32,
+            _h: u32,
+            _hidden: &[String],
+        ) -> Option<egui::TextureId> {
             None
         }
     }
@@ -33,9 +41,9 @@ use deckcraft_interactive::object::{self as obj, Kind};
 use egui::Ui;
 use serde_json::{Value, json};
 
+use crate::SlideApp;
 use crate::icons::Icon;
 use crate::widgets::{group, rows};
-use crate::SlideApp;
 
 /// The pane id of the object settings.
 pub const PANE: &str = "interactive";
@@ -230,9 +238,9 @@ pub fn insert_with_paths(app: &mut SlideApp, kind: Kind, paths: &[String]) {
             let anchored = r["object"]["anchor"].is_object();
             let slide = app.session.active().map(|d| d.selection.slide + 1).unwrap_or(1);
             let where_ = if anchored {
-                let name = r["object"]["anchor"]["shape"].as_u64().and_then(|id| {
-                    app.session.active().and_then(|d| d.shape(deckcraft_model::ShapeId(id as u32)).map(|s| s.name.clone()))
-                });
+                let name = r["object"]["anchor"]["shape"]
+                    .as_u64()
+                    .and_then(|id| app.session.active().and_then(|d| d.shape(deckcraft_model::ShapeId(id as u32)).map(|s| s.name.clone())));
                 match name {
                     Some(n) => format!("over {n}"),
                     None => format!("to slide {slide}"),

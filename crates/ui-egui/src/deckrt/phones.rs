@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
 use deckcraft_interactive::object::Config;
-use deckcraft_interactive::state::{ObjectState, TypeState};
 use deckcraft_interactive::poll;
+use deckcraft_interactive::state::{ObjectState, TypeState};
 use deckcraft_model::Presentation;
 use deckcraft_phones::{AddressInfo, Inbound, PhoneMessage, RosterEntry, hotspot, results};
 use egui::{Color32, Ui, vec2};
@@ -319,7 +319,10 @@ impl Phones {
         }
         let Some(server) = self.server.as_mut() else { return redraw };
         let inbound = server.poll();
-        let models: Vec<Item> = objects_on(doc, idx).into_iter().filter(|it| it.obj.kind() == deckcraft_interactive::Kind::Model && ext_states.get(&it.id).is_none_or(|s| s.visible)).collect();
+        let models: Vec<Item> = objects_on(doc, idx)
+            .into_iter()
+            .filter(|it| it.obj.kind() == deckcraft_interactive::Kind::Model && ext_states.get(&it.id).is_none_or(|s| s.visible))
+            .collect();
         let poll_item = objects_on(doc, idx).into_iter().find(|it| it.obj.kind() == deckcraft_interactive::Kind::Poll);
         let mut tell_you: Vec<String> = vec![];
         for m in inbound {
@@ -424,7 +427,10 @@ impl Phones {
                             continue;
                         }
                         let key = format!("{id}:{stroke}");
-                        let pts = points.iter().filter(|p| p[0].is_finite() && p[1].is_finite()).map(|p| [p[0].clamp(0.0, 1.0) as f32, p[1].clamp(0.0, 1.0) as f32]);
+                        let pts = points
+                            .iter()
+                            .filter(|p| p[0].is_finite() && p[1].is_finite())
+                            .map(|p| [p[0].clamp(0.0, 1.0) as f32, p[1].clamp(0.0, 1.0) as f32]);
                         match ink.iter_mut().find(|s| s.key == key) {
                             Some(s) => s.points.extend(pts),
                             None => {
@@ -508,7 +514,15 @@ impl Phones {
         groups.len() == models.len() && groups.windows(2).all(|w| w[0] == w[1])
     }
 
-    fn show_message(&self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation, idx: usize, models: &[Item], poll_item: Option<&Item>, blackout: bool) -> Value {
+    fn show_message(
+        &self,
+        states: &BTreeMap<u32, ObjectState>,
+        doc: &Presentation,
+        idx: usize,
+        models: &[Item],
+        poll_item: Option<&Item>,
+        blackout: bool,
+    ) -> Value {
         let poll_msg = poll_item.and_then(|p| {
             let Config::Poll(c) = &p.obj.config else { return None };
             let (open, revealed) = match states.get(&p.id) {
@@ -567,7 +581,8 @@ impl Phones {
         let (control, position) = self.queue.standing(id);
         let target = if models.is_empty() {
             String::new()
-        } else if models.len() > 1 && (self.targets.get(id).is_some_and(|t| t == "all") || (self.targets.get(id).is_none() && self.together(models))) {
+        } else if models.len() > 1 && (self.targets.get(id).is_some_and(|t| t == "all") || (self.targets.get(id).is_none() && self.together(models)))
+        {
             "all".to_string()
         } else {
             self.targets.get(id).filter(|t| models.iter().any(|m| &m.id.to_string() == *t)).cloned().unwrap_or_else(|| models[0].id.to_string())
@@ -682,7 +697,18 @@ impl Phones {
             return;
         }
         let items = objects_on(doc, idx);
-        let drawn: Vec<&Item> = items.iter().filter(|it| matches!(it.obj.kind(), deckcraft_interactive::Kind::Model | deckcraft_interactive::Kind::ImageSwap | deckcraft_interactive::Kind::Scrub | deckcraft_interactive::Kind::Wipe) && ext.states.get(&it.id).is_none_or(|s| s.visible)).collect();
+        let drawn: Vec<&Item> = items
+            .iter()
+            .filter(|it| {
+                matches!(
+                    it.obj.kind(),
+                    deckcraft_interactive::Kind::Model
+                        | deckcraft_interactive::Kind::ImageSwap
+                        | deckcraft_interactive::Kind::Scrub
+                        | deckcraft_interactive::Kind::Wipe
+                ) && ext.states.get(&it.id).is_none_or(|s| s.visible)
+            })
+            .collect();
         if drawn.is_empty() && ext.ink.is_empty() {
             if self.live_current.is_some() {
                 self.live_current = None;
@@ -691,7 +717,11 @@ impl Phones {
             return;
         }
         let ink_points: usize = ext.ink.iter().map(|s| s.points.len()).sum();
-        let key = format!("{idx}|{}|{ink_points}|{:?}", ext.ink.len(), drawn.iter().map(|it| ext.states.get(&it.id).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>());
+        let key = format!(
+            "{idx}|{}|{ink_points}|{:?}",
+            ext.ink.len(),
+            drawn.iter().map(|it| ext.states.get(&it.id).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>()
+        );
         if key == self.live_key && self.live_current.is_some_and(|(s, _)| s == idx) {
             return;
         }
@@ -699,7 +729,12 @@ impl Phones {
         let mut layers: Vec<Layer> = vec![];
         for it in drawn {
             let Some(os) = ext.states.get(&it.id) else { continue };
-            let r = [it.xfrm.x / doc.slide_size.width.max(1.0), it.xfrm.y / doc.slide_size.height.max(1.0), it.xfrm.w / doc.slide_size.width.max(1.0), it.xfrm.h / doc.slide_size.height.max(1.0)];
+            let r = [
+                it.xfrm.x / doc.slide_size.width.max(1.0),
+                it.xfrm.y / doc.slide_size.height.max(1.0),
+                it.xfrm.w / doc.slide_size.width.max(1.0),
+                it.xfrm.h / doc.slide_size.height.max(1.0),
+            ];
             match (&os.st, &it.obj.config, &it.shape.kind) {
                 (TypeState::Model { layers: vis, turn, zoom, .. }, Config::Model(c), deckcraft_model::ShapeKind::Model3d { media, .. }) => {
                     if let Some(model) = models.model(doc, *media) {
@@ -724,7 +759,9 @@ impl Phones {
                     }
                 }
                 (TypeState::Wipe { position }, Config::Wipe(c), _) => {
-                    if let (Some(before), Some(after)) = (super::pictures::Pictures::decode(doc, c.before.0), super::pictures::Pictures::decode(doc, c.after.0)) {
+                    if let (Some(before), Some(after)) =
+                        (super::pictures::Pictures::decode(doc, c.before.0), super::pictures::Pictures::decode(doc, c.after.0))
+                    {
                         layers.push(Layer::Picture { rect: r, img: after, cover: true });
                         let cut = [r[0], r[1], r[2] * *position, r[3]];
                         layers.push(Layer::Clipped { rect: r, clip: cut, img: before });
@@ -824,7 +861,12 @@ fn compose(base: Option<PathBuf>, aspect: f64, layers: Vec<Layer>) -> Option<Vec
         None => image::RgbaImage::from_pixel(w, h, image::Rgba([255, 255, 255, 255])),
     };
     let px = |r: [f64; 4]| -> (i64, i64, u32, u32) {
-        ((r[0] * w as f64).round() as i64, (r[1] * h as f64).round() as i64, (r[2] * w as f64).round().max(1.0) as u32, (r[3] * h as f64).round().max(1.0) as u32)
+        (
+            (r[0] * w as f64).round() as i64,
+            (r[1] * h as f64).round() as i64,
+            (r[2] * w as f64).round().max(1.0) as u32,
+            (r[3] * h as f64).round().max(1.0) as u32,
+        )
     };
     for l in layers {
         match l {
@@ -976,7 +1018,9 @@ pub fn section(ui: &mut Ui, ext: &mut Ext, rect: egui::Rect) -> f32 {
             });
             if let Some(t) = &ext.last_test {
                 match t {
-                    Ok(_) => dim(ui, "Test passed: the page answers from this laptop. If no phone can open it, the wifi or the firewall is in the way."),
+                    Ok(_) => {
+                        dim(ui, "Test passed: the page answers from this laptop. If no phone can open it, the wifi or the firewall is in the way.")
+                    }
                     Err(e) => dim(ui, &format!("Test failed: {e}")),
                 }
             }

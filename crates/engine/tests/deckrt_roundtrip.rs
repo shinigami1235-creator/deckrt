@@ -127,7 +127,8 @@ fn the_pptx_fallbacks_are_what_another_app_would_show() {
             (Config::Scrub(c), ShapeKind::Picture { fill }) => assert_eq!(fill.media, c.images[c.initial_index].0, "{name}: the starting picture"),
             (Config::Wipe(c), ShapeKind::Picture { fill }) => assert_eq!(fill.media, c.before.0, "{name}: the before picture"),
             (Config::Poll(c), ShapeKind::Shape) => {
-                let text = back.slides.iter().flat_map(|sl| sl.shapes.iter()).find(|sh| sh.name == name).and_then(|sh| sh.text.as_ref()).map(|t| t.text());
+                let text =
+                    back.slides.iter().flat_map(|sl| sl.shapes.iter()).find(|sh| sh.name == name).and_then(|sh| sh.text.as_ref()).map(|t| t.text());
                 assert!(text.as_deref().is_some_and(|t| t.contains(&c.question) && t.contains("Keratinocyte")), "{name}: {text:?}");
             }
             (Config::Model(_), ShapeKind::Model3d { .. }) => {}

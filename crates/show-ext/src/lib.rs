@@ -44,7 +44,8 @@ pub fn presenter_frame(display: &DisplayInfo) -> Option<[f32; 4]> {
     if !scale.is_finite() || scale <= 0.0 || display.size_px[0] == 0 || display.size_px[1] == 0 {
         return None;
     }
-    let f = [display.origin[0] as f32 / scale, display.origin[1] as f32 / scale, display.size_px[0] as f32 / scale, display.size_px[1] as f32 / scale];
+    let f =
+        [display.origin[0] as f32 / scale, display.origin[1] as f32 / scale, display.size_px[0] as f32 / scale, display.size_px[1] as f32 / scale];
     (f.iter().all(|v| v.is_finite()) && f[2] > 1.0 && f[3] > 1.0).then_some(f)
 }
 

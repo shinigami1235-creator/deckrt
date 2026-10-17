@@ -1331,7 +1331,8 @@ fn gif_hit(ctx: &egui::Context, ui: &Ui, show: &Show, doc_uid: u64, doc: &Presen
 }
 
 impl Show {
-    pub(crate) fn zoom_uv(&self) -> Rect { // deckrt hook: pub(crate)
+    pub(crate) fn zoom_uv(&self) -> Rect {
+        // deckrt hook: pub(crate)
         self.zoom.map(Zoom::uv).unwrap_or_else(unit_uv)
     }
 
@@ -1753,7 +1754,14 @@ fn render_thumb(ctx: &egui::Context, show: &mut Show, doc: &Presentation, i: usi
     Some(tex)
 }
 
-fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &std::sync::Arc<Presentation>, now: f64, keep: &mut bool, deckrt: &mut crate::deckrt::State) {
+fn presenter_window(
+    ctx: &egui::Context,
+    show: &mut Show,
+    doc: &std::sync::Arc<Presentation>,
+    now: f64,
+    keep: &mut bool,
+    deckrt: &mut crate::deckrt::State,
+) {
     let cur = show.state.slide;
     let next = show.state.peek_next(doc);
     let cur_tex = show.tex.as_ref().map(|(_, t)| t.clone());
@@ -1866,7 +1874,16 @@ fn presenter_window(ctx: &egui::Context, show: &mut Show, doc: &std::sync::Arc<P
                     ui.painter().rect_filled(cr, CornerRadius::ZERO, c);
                 }
                 // deckrt hook: the objects over the slide and their control rows under it.
-                crate::deckrt::show::presenter_slide(ui, show, doc, deckrt, cr, Rect::from_min_max(pos2(left.min.x, cr.max.y + 8.0), left.max), now, &mut go_to);
+                crate::deckrt::show::presenter_slide(
+                    ui,
+                    show,
+                    doc,
+                    deckrt,
+                    cr,
+                    Rect::from_min_max(pos2(left.min.x, cr.max.y + 8.0), left.max),
+                    now,
+                    &mut go_to,
+                );
                 let nr = next_rect(right, doc);
                 ui.painter().text(right.min, Align2::LEFT_TOP, "Next", theme::font(13.0), Color32::from_gray(170));
                 match &next_tex {

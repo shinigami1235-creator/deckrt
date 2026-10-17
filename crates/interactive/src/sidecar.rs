@@ -139,7 +139,8 @@ impl Report {
         let mut s = String::new();
         if !self.objects.is_empty() {
             let items: Vec<String> = self.objects.iter().map(|o| format!("{} on slide {}", o.obj.kind().words(), o.slide + 1)).collect();
-            let (list, more) = if items.len() > 8 { (items[..8].join(", "), format!(" and {} more", items.len() - 8)) } else { (items.join(", "), String::new()) };
+            let (list, more) =
+                if items.len() > 8 { (items[..8].join(", "), format!(" and {} more", items.len() - 8)) } else { (items.join(", "), String::new()) };
             s.push_str(&format!(
                 "Brought in from {file_name}: {list}{more}. Save the presentation to keep {}.",
                 if self.objects.len() == 1 { "it" } else { "them" }

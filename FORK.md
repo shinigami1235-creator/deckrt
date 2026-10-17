@@ -67,6 +67,7 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/engine/src/links.rs` | `APP_NAME`, `UPSTREAM`; the ArtCraft community links are gone |
 | `crates/engine/src/media_refs.rs` | the media walker also visits `"media:<id>"` tokens in `DECKRT.*` tag values (so they are counted as used, remapped on paste, and not dropped on save) |
 | `crates/model/src/lib.rs` | `pub mod tag_media;` |
+| `crates/model/src/trendline.rs` | one range check written the way the current clippy asks (`cargo clippy -D warnings` failed on upstream's line with Rust 1.97) |
 | `crates/pptx/src/lib.rs`, `read/mod.rs` | `file_slide_ids()` (the `p:sldId` ids the sidecars name); tag reading turns `"rel:rIdN"` tokens back into `"media:<id>"` |
 | `crates/pptx/src/write/mod.rs` | tag writing turns `"media:<id>"` tokens into relationships of the tags part |
 | `crates/pptx/src/write/shapes.rs` | a 3-D model's `p:nvPr` carries its tags like a picture's |
@@ -118,6 +119,40 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 
 ## PowerPoint feel: next run
 
-Gaps that would keep the app from feeling like PowerPoint, ranked, with a rough size.
+Gaps that would keep the app from feeling like PowerPoint, ranked, with a rough size. Sizes:
+small is an afternoon, medium a day or two, large a week.
 
-(filled in at the end of the run)
+1. **The ribbon does not shrink to the window.** The Home tab needs about 1600 points; on a
+   1920-pixel laptop at 125% scaling (1536 points) its right end (Find, Replace, Replace Fonts,
+   Selection Pane, Design Ideas) is cut off. PowerPoint collapses groups into drop-downs. The
+   upstream test `replacefonts_tests::ribbon_button_opens_the_dialog_and_replaces` fails at its
+   1400-point window for this reason alone. Large.
+2. **Objects do not play in the editor.** A wipe, scrub, swap, popup and poll show their fallback
+   picture with a badge; only the model is live. PowerPoint plays media in place on a click, and
+   the same would do here (a double-click runs the object in the editor). Medium.
+3. **The pane looks like egui, not Office.** Text fields and buttons have no frame until hovered,
+   an unticked box is invisible, and the pane's own Delete is a bare word. Upstream's theme does
+   this to every pane; a widget style with frames would change the whole app at once. Medium.
+4. **A PowerPoint model gets no 3D Model tab.** PowerPoint shows a tab with views, pan and zoom
+   and reset when a model is selected; here the settings are in the pane and the view is turned
+   by the round handle. Medium.
+5. **Objects are outside the animation system.** They cannot be triggered by an animation or a
+   click sequence, only by the presenter, a key or a click on them. Medium.
+6. **The model is turned by a handle in the editor, not by dragging it.** PowerPoint drags the
+   model itself and moves it by its frame. A direct drag with the move on the frame would match.
+   Small.
+7. **Editor and show disagree on a resized picture.** A swap or scrub picture is fitted inside
+   its box in the show but stretched to it in the editor once the box has been resized. Small.
+8. **No context menu entries.** Right-clicking an object gives the shape menu only; PowerPoint
+   would offer the object's own actions (Reset, Replace file, Settings). Small.
+9. **The fallback shapes use fixed colours.** A poll's box is dark blue and a popup's trigger
+   accent 1 whatever the theme; PowerPoint content follows the theme. Small.
+10. **Presenter view opens on one display too.** With one display the presenter window opens on
+    top of the full-screen show. PowerPoint shows only the slide show there unless asked. Small.
+11. **The show's objects take no touch gestures.** A pinch does not zoom a model and a two-finger
+    drag does not pan a zoom region; PowerPoint's show takes touch. Medium.
+12. **No Office file association from the zip.** Only the MSI registers deckrt under Open with.
+    Small.
+13. **No thumbnails for a model in the Selection Pane** and no object icons there. Small.
+14. **The Interactive group has no caption**, like the other groups upstream; PowerPoint names
+    its groups. Small (every group).

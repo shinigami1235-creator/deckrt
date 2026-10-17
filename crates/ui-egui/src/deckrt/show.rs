@@ -36,10 +36,20 @@ pub use deckcraft_show_ext::DisplayInfo;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Drag {
     /// Turning a model: the pointer position at the last step.
-    Model { id: u32, last: Pos2 },
-    Wipe { id: u32 },
-    Scrub { id: u32 },
-    Measure { id: u32, handle: usize },
+    Model {
+        id: u32,
+        last: Pos2,
+    },
+    Wipe {
+        id: u32,
+    },
+    Scrub {
+        id: u32,
+    },
+    Measure {
+        id: u32,
+        handle: usize,
+    },
 }
 
 /// A stroke a phone drew on the slide, in slide units (0 to 1).
@@ -303,10 +313,7 @@ impl Ext {
 
     /// The models on the slide that a phone may turn, in slide order, visible ones only.
     pub fn models_on(&self, doc: &Presentation, idx: usize) -> Vec<Item> {
-        objects_on(doc, idx)
-            .into_iter()
-            .filter(|it| it.obj.kind() == Kind::Model && self.states.get(&it.id).is_none_or(|s| s.visible))
-            .collect()
+        objects_on(doc, idx).into_iter().filter(|it| it.obj.kind() == Kind::Model && self.states.get(&it.id).is_none_or(|s| s.visible)).collect()
     }
 
     /// The first poll on the slide.
@@ -473,8 +480,20 @@ pub fn draw(
                 painter.circle_filled(knob, 11.0, Color32::from_rgba_unmultiplied(20, 20, 24, 215));
                 painter.circle_stroke(knob, 11.0, Stroke::new(1.5, Color32::WHITE));
                 painter.text(knob, Align2::CENTER_CENTER, "⇔", FontId::proportional(13.0), Color32::WHITE);
-                painter.text(rect.left_top() + vec2(8.0, 6.0), Align2::LEFT_TOP, "Before", FontId::proportional(12.0), Color32::from_rgba_unmultiplied(255, 255, 255, 200));
-                painter.text(rect.right_top() + vec2(-8.0, 6.0), Align2::RIGHT_TOP, "After", FontId::proportional(12.0), Color32::from_rgba_unmultiplied(255, 255, 255, 200));
+                painter.text(
+                    rect.left_top() + vec2(8.0, 6.0),
+                    Align2::LEFT_TOP,
+                    "Before",
+                    FontId::proportional(12.0),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 200),
+                );
+                painter.text(
+                    rect.right_top() + vec2(-8.0, 6.0),
+                    Align2::RIGHT_TOP,
+                    "After",
+                    FontId::proportional(12.0),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 200),
+                );
             }
             (TypeState::Scrub { index }, Config::Scrub(c)) => {
                 if let Some(m) = c.images.get(*index).or(c.images.first())
@@ -521,7 +540,13 @@ pub fn draw(
                         }
                         PopupContent::Web { url } => {
                             let size = (map.srect.height() * 0.025).clamp(12.0, 28.0);
-                            painter.text(inner.center(), Align2::CENTER_CENTER, format!("{url}\nopened in the browser"), FontId::proportional(size), Color32::from_gray(60));
+                            painter.text(
+                                inner.center(),
+                                Align2::CENTER_CENTER,
+                                format!("{url}\nopened in the browser"),
+                                FontId::proportional(size),
+                                Color32::from_gray(60),
+                            );
                         }
                     }
                 }
@@ -574,12 +599,22 @@ pub fn draw(
                     pill(painter, rect.right_bottom() - vec2(6.0, 6.0), Align2::RIGHT_BOTTOM, &injection::totals_line(c, points), size);
                 }
                 if role == Role::Presenter {
-                    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)), StrokeKind::Inside);
+                    painter.rect_stroke(
+                        rect,
+                        CornerRadius::ZERO,
+                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)),
+                        StrokeKind::Inside,
+                    );
                 }
             }
             (TypeState::Zoom { .. }, _) => {
                 if role == Role::Presenter {
-                    painter.rect_stroke(rect, CornerRadius::ZERO, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)), StrokeKind::Inside);
+                    painter.rect_stroke(
+                        rect,
+                        CornerRadius::ZERO,
+                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)),
+                        StrokeKind::Inside,
+                    );
                 }
             }
             _ => {}
@@ -665,7 +700,13 @@ fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: boo
             painter.rect_filled(row, CornerRadius::same(4), Color32::from_white_alpha(14));
         }
         let label = format!("{letter}.  {opt}");
-        let col = if revealed && right { Color32::WHITE } else if revealed { Color32::from_gray(200) } else { Color32::WHITE };
+        let col = if revealed && right {
+            Color32::WHITE
+        } else if revealed {
+            Color32::from_gray(200)
+        } else {
+            Color32::WHITE
+        };
         painter.text(pos2(row.min.x + 8.0, row.center().y), Align2::LEFT_CENTER, label, FontId::proportional(asize), col);
         if revealed && right {
             painter.text(pos2(row.min.x + row.width() * 0.62, row.center().y), Align2::LEFT_CENTER, "✓", FontId::proportional(asize), Color32::WHITE);
@@ -882,7 +923,8 @@ pub(crate) fn pointer(
             // A click on the strip picks that picture; elsewhere closes the strip.
             let th = (rect.height() * 0.18).clamp(24.0, 90.0);
             if p.y >= rect.max.y - th && !c.images.is_empty() {
-                let i = (((p.x - rect.min.x) / rect.width().max(1.0)) * c.images.len() as f32).floor().clamp(0.0, c.images.len() as f32 - 1.0) as usize;
+                let i =
+                    (((p.x - rect.min.x) / rect.width().max(1.0)) * c.images.len() as f32).floor().clamp(0.0, c.images.len() as f32 - 1.0) as usize;
                 if let Some(ObjectState { st: TypeState::Swap { index, picker }, .. }) = ext.states.get_mut(&it.id) {
                     *index = i;
                     *picker = false;
@@ -908,7 +950,16 @@ pub(crate) fn pointer(
 }
 
 /// An object's shortcut key, pressed in either window. Returns whether a key was taken.
-pub(crate) fn shortcut(ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>, doc: &Presentation, idx: usize, key: egui::Key, mods: egui::Modifiers, now: f64, ctx: &egui::Context) -> bool {
+pub(crate) fn shortcut(
+    ext: &mut Ext,
+    show_zoom: &mut Option<crate::show::Zoom>,
+    doc: &Presentation,
+    idx: usize,
+    key: egui::Key,
+    mods: egui::Modifiers,
+    now: f64,
+    ctx: &egui::Context,
+) -> bool {
     if mods.command || mods.ctrl || mods.alt {
         return false;
     }
@@ -960,7 +1011,15 @@ fn dim(ui: &mut Ui, text: &str) {
 
 /// One row per object on the current slide, in the presenter window. `go_to` receives a slide
 /// index when the presenter follows a poll's winning answer.
-pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<crate::show::Zoom>, doc: &Arc<Presentation>, idx: usize, now: f64, go_to: &mut Option<usize>) {
+pub(crate) fn presenter_rows(
+    ui: &mut Ui,
+    ext: &mut Ext,
+    show_zoom: &mut Option<crate::show::Zoom>,
+    doc: &Arc<Presentation>,
+    idx: usize,
+    now: f64,
+    go_to: &mut Option<usize>,
+) {
     dark_widgets(ui);
     ext.sync_slide(doc, idx);
     let items = objects_on(doc, idx);
@@ -1038,7 +1097,11 @@ pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<
                             ext.changed_at = now;
                         }
                     }
-                    if (c.correct.is_none() || !c.reveal_correct) && !*revealed && !votes.is_empty() && row_button(ui, "Show the split", false).clicked() {
+                    if (c.correct.is_none() || !c.reveal_correct)
+                        && !*revealed
+                        && !votes.is_empty()
+                        && row_button(ui, "Show the split", false).clicked()
+                    {
                         if let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id) {
                             *open = false;
                             *revealed = true;
@@ -1122,7 +1185,9 @@ pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<
                             (v[0], v[1], v[2])
                         };
                         let fill = if *product == i { Color32::from_rgb(r, g, b) } else { Color32::from_gray(60) };
-                        let btn = ui.add(egui::Button::new(egui::RichText::new(&p.name).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)));
+                        let btn = ui.add(
+                            egui::Button::new(egui::RichText::new(&p.name).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)),
+                        );
                         if btn.clicked()
                             && let Some(ObjectState { st: TypeState::InjectionMap { product, dose, .. }, .. }) = ext.states.get_mut(&it.id)
                         {
@@ -1150,7 +1215,10 @@ pub(crate) fn presenter_rows(ui: &mut Ui, ext: &mut Ext, show_zoom: &mut Option<
                         ext.changed_at = now;
                     }
                     let mut pin = *pinned;
-                    if ui.checkbox(&mut pin, egui::RichText::new("Pin").color(Color32::WHITE)).on_hover_text("Keep the points when the slide changes").changed()
+                    if ui
+                        .checkbox(&mut pin, egui::RichText::new("Pin").color(Color32::WHITE))
+                        .on_hover_text("Keep the points when the slide changes")
+                        .changed()
                         && let Some(ObjectState { st: TypeState::InjectionMap { pinned, .. }, .. }) = ext.states.get_mut(&it.id)
                     {
                         *pinned = pin;
@@ -1368,7 +1436,12 @@ mod tests {
         let press = egui::RawInput {
             events: vec![
                 egui::Event::PointerMoved(pos2(480.0, 270.0)),
-                egui::Event::PointerButton { pos: pos2(480.0, 270.0), button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE },
+                egui::Event::PointerButton {
+                    pos: pos2(480.0, 270.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
             ],
             ..Default::default()
         };
@@ -1467,7 +1540,15 @@ pub fn audience_pointer(show: &mut Show, ctx: &egui::Context, srect: Rect, doc: 
 }
 
 /// The objects over the slide picture on the audience screen.
-pub fn draw_audience(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, painter: &egui::Painter, srect: Rect, doc: &Arc<Presentation>, now: f64) {
+pub fn draw_audience(
+    app: &mut SlideApp,
+    show: &mut Show,
+    ctx: &egui::Context,
+    painter: &egui::Painter,
+    srect: Rect,
+    doc: &Arc<Presentation>,
+    now: f64,
+) {
     let map = Map::new(srect, show.zoom_uv(), doc);
     let idx = show.state.slide;
     draw(ctx, painter, map, doc, idx, &mut show.ext, &mut app.deckrt, Role::Audience, now);
@@ -1511,7 +1592,16 @@ pub fn end_show(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
 /// clicks and drags) and one control row per object under it. `go_to` is set when the presenter
 /// follows a poll's winning answer.
 #[allow(clippy::too_many_arguments)]
-pub fn presenter_slide(ui: &mut Ui, show: &mut Show, doc: &Arc<Presentation>, deckrt: &mut super::State, cr: Rect, rows: Rect, now: f64, go_to: &mut Option<usize>) {
+pub fn presenter_slide(
+    ui: &mut Ui,
+    show: &mut Show,
+    doc: &Arc<Presentation>,
+    deckrt: &mut super::State,
+    cr: Rect,
+    rows: Rect,
+    now: f64,
+    go_to: &mut Option<usize>,
+) {
     let idx = show.state.slide;
     let map = Map::new(cr, show.zoom_uv(), doc);
     let hovered = ui.rect_contains_pointer(cr);
