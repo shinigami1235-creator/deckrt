@@ -1380,6 +1380,7 @@ dependencies = [
 name = "deckcraft-ui-egui"
 version = "0.7.0"
 dependencies = [
+ "chrono",
  "deckcraft-anim",
  "deckcraft-captions",
  "deckcraft-color",

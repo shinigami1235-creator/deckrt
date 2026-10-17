@@ -100,6 +100,10 @@ fn save_prefs(app: &SlideApp) {
 fn services() -> Services {
     Services {
         pick_open: Some(Box::new(|purpose: &str| {
+            // deckrt: Find a Slide asks for a folder.
+            if purpose == "folder" {
+                return rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().to_string());
+            }
             let d = rfd::FileDialog::new();
             let d = match purpose {
                 "picture" | "pictures" => d.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"]),

@@ -4,6 +4,8 @@
 
 pub mod canvas;
 pub mod captions;
+pub mod coach;
+pub mod finder;
 pub mod check;
 #[cfg(feature = "gpu3d")]
 pub mod gpu;
@@ -75,6 +77,10 @@ pub struct State {
     pub blur: Option<privacy::BlurTool>,
     /// Live captions: settings, the model download.
     pub captions: captions::Prefs,
+    /// The last rehearsal with the coach, for its report.
+    pub coach: Option<coach::Done>,
+    /// Find a Slide: the index of the decks in the chosen folders, and the search.
+    pub finder: finder::Finder,
     /// The per-user settings folder (the desktop app fills this in): the speech model lives here.
     pub settings_dir: Option<std::path::PathBuf>,
     /// The deck revision the check before showing last passed (or was waved through) at.
@@ -293,6 +299,8 @@ pub fn dialog_title(id: &str) -> &'static str {
         "deckrt.imported" => "Interactive objects brought in",
         check::DIALOG => check::title(),
         captions::DIALOG => captions::title(),
+        coach::DIALOG => coach::title(),
+        finder::DIALOG => finder::title(),
         privacy::DIALOG => "Check before sharing",
         _ => "deckrt",
     }
@@ -303,6 +311,8 @@ pub fn dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -
     match d.id.as_str() {
         check::DIALOG => check::body(app, ui, d),
         captions::DIALOG => captions::body(app, ui),
+        coach::DIALOG => coach::body(app, ui),
+        finder::DIALOG => finder::body(app, ui),
         privacy::DIALOG => check::body(app, ui, d),
         "deckrt.imported" => {
             let text = d.params.get("text").and_then(Value::as_str).unwrap_or("").to_string();

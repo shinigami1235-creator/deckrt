@@ -449,6 +449,7 @@ fn slides_group(app: &mut SlideApp, ui: &mut Ui) {
                 }
             });
         }
+        crate::deckrt::finder::ribbon_button(app, ui); // deckrt hook
         rows(ui, |ui| {
             let (r, _) = small_button_ex(ui, Icon::Layout, "Layout", enabled(app, "slide.layout"), false, true);
             egui::Popup::menu(&r).width(420.0).show(|ui| layout_menu(app, ui, "slide.layout"));
@@ -2080,6 +2081,7 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
                 s.rehearse = true;
             }
         }
+        crate::deckrt::coach::ribbon_button(app, ui); // deckrt hook
         let r = big_button(ui, Icon::Record, "Record", false);
         let _ = r.on_hover_text("Recording narration needs audio capture (coming soon)");
     });

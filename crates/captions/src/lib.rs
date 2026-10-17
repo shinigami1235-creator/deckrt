@@ -206,6 +206,11 @@ pub struct Cutter {
     speech_frames: usize,
     quiet_frames: usize,
     pending: Vec<f32>,
+    /// Samples read so far, the clock for phrase times.
+    pos: usize,
+    /// Where the phrase being gathered starts and its last speech frame ends, in samples.
+    start: usize,
+    last_speech: usize,
 }
 
 pub const RATE: usize = 16_000;
@@ -215,13 +220,22 @@ const FRAME: usize = RATE * 30 / 1000;
 #[derive(Debug, PartialEq)]
 pub enum Cut {
     /// A whole phrase, ready to recognise.
-    Phrase(Vec<f32>),
+    Phrase(Phrase),
     Nothing,
+}
+
+/// A phrase's sound and when it was spoken, in seconds since the microphone opened.
+#[derive(Debug, PartialEq)]
+pub struct Phrase {
+    pub audio: Vec<f32>,
+    pub start: f64,
+    /// The end of the last speech in it (the quiet after it left out).
+    pub end: f64,
 }
 
 impl Default for Cutter {
     fn default() -> Self {
-        Cutter { floor: 0.002, buf: vec![], speech_frames: 0, quiet_frames: 0, pending: vec![] }
+        Cutter { floor: 0.002, buf: vec![], speech_frames: 0, quiet_frames: 0, pending: vec![], pos: 0, start: 0, last_speech: 0 }
     }
 }
 
@@ -238,6 +252,7 @@ impl Cutter {
         while i + FRAME <= self.pending.len() {
             let f = &self.pending[i..i + FRAME];
             i += FRAME;
+            self.pos += FRAME;
             let rms = (f.iter().map(|x| x * x).sum::<f32>() / FRAME as f32).sqrt();
             let speech = rms > (self.floor * 3.0).max(0.006);
             if !speech {
@@ -248,8 +263,12 @@ impl Cutter {
                 self.buf.extend_from_slice(f);
             }
             if speech {
+                if self.speech_frames == 0 {
+                    self.start = self.pos - FRAME;
+                }
                 self.speech_frames += 1;
                 self.quiet_frames = 0;
+                self.last_speech = self.pos;
             } else if self.speech_frames > 0 {
                 self.quiet_frames += 1;
             }
@@ -257,7 +276,8 @@ impl Cutter {
             let too_long = self.buf.len() >= RATE * 10;
             if self.speech_frames > 0 && (long_pause || too_long) {
                 if self.speech_frames >= 12 {
-                    out.push(Cut::Phrase(std::mem::take(&mut self.buf)));
+                    let secs = |n: usize| n as f64 / RATE as f64;
+                    out.push(Cut::Phrase(Phrase { audio: std::mem::take(&mut self.buf), start: secs(self.start), end: secs(self.last_speech) }));
                 } else {
                     self.buf.clear();
                 }
@@ -289,6 +309,8 @@ pub fn resample(samples: &[f32], rate: u32) -> Vec<f32> {
         .collect()
 }
 
+pub mod coach;
+
 #[cfg(feature = "engine")]
 mod engine;
 #[cfg(feature = "engine")]
@@ -308,7 +330,10 @@ mod tests {
         assert!(c.so_far().is_some());
         let cuts = c.push(&quiet);
         match &cuts[0] {
-            Cut::Phrase(p) => assert!(p.len() >= RATE && p.len() < RATE * 2, "{}", p.len()),
+            Cut::Phrase(p) => {
+                assert!(p.audio.len() >= RATE && p.audio.len() < RATE * 2, "{}", p.audio.len());
+                assert!((p.start - 1.0).abs() < 0.05 && (p.end - 2.0).abs() < 0.05, "{} {}", p.start, p.end);
+            }
             Cut::Nothing => panic!("no phrase"),
         }
     }

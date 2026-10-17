@@ -23,7 +23,7 @@ pub struct Show {
     pub rehearse: bool,
     timeline: Option<(usize, Timeline)>,
     step_start: f64,
-    slide_start: f64,
+    pub(crate) slide_start: f64, // deckrt hook: pub(crate)
     step_end: f64,
     trans: Option<Transition>,
     tex: Option<(Key, TextureHandle)>,
@@ -46,7 +46,7 @@ pub struct Show {
     goto: String,
     goto_at: f64,
     started: bool,
-    show_start: f64,
+    pub(crate) show_start: f64, // deckrt hook: pub(crate)
     /// Elapsed time in presenter view. Pausing it does not pause the show.
     timer: PresenterTimer,
     /// Speaker-notes size in presenter view, in points.

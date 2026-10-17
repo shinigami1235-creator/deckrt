@@ -26,6 +26,9 @@ current) does not apply here.
 | `crates/captions` | Live captions: model files and their download (curl), settings, phrase cutting, and with the `engine` feature the microphone (cpal) and recogniser (whisper.cpp through whisper-rs) threads |
 | `crates/engine/src/cmd/deckrt_check.rs` | `deckrt.check`: the check before a talk (media, fonts, overflow, off-slide shapes, objects with missing files, 4:3, file size), each finding with its fix as commands |
 | `crates/engine/src/cmd/deckrt_privacy.rs` | `deckrt.privacy` (the check before sharing), `deckrt.applyCrops`, `deckrt.stripMetadata`, `deckrt.removeNotes`, `deckrt.blurArea` |
+| `crates/captions/src/coach.rs` | Rehearse with Coach's analysis: phrases laid against the slides shown, filler words (English and Thai), pauses, pace, slides read out |
+| `crates/engine/src/cmd/deckrt_coach.rs` | `deckrt.keepPace`: each slide's rehearsed seconds in the slide tag `DECKRT.PACE` |
+| `crates/ui-egui/src/deckrt/coach.rs`, `finder.rs` | Rehearse with Coach (the listening, the report, the pace line in presenter view); Find a Slide (the deck index, thumbnails, search, insert) |
 | `crates/ui-egui/src/deckrt/check.rs`, `privacy.rs`, `captions.rs`, `questions.rs` | Their windows and buttons; Blur Area's drag; the caption band; questions from phones |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
@@ -97,6 +100,10 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/engine/src/cmd/mod.rs` (round 3) | `pub mod deckrt_check; pub mod deckrt_privacy;` and their `specs()` |
 | `crates/ui-egui/src/lib.rs` (round 3) | `start_show` calls `deckrt::check::gate` first: the check opens instead of the show when it finds a problem |
 | `crates/ui-egui/src/ribbon.rs` (round 3) | Check Deck and Live Captions on the Slide Show tab; Check Before Sharing and Blur Area on the Review tab |
+| `crates/engine/src/cmd/mod.rs` (round 4) | `pub mod deckrt_coach;` and its `specs()` |
+| `crates/ui-egui/src/show.rs` (round 4) | `slide_start` and `show_start` are `pub(crate)` for the coach and the pace line |
+| `crates/ui-egui/src/ribbon.rs` (round 4) | Rehearse with Coach after Rehearse Timings on the Slide Show tab; Find a Slide after New Slide on the Home tab |
+| `apps/deckcraft/src/main.rs` (round 4) | `pick_open("folder")` opens a folder picker, for Find a Slide's Add folder |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -150,6 +157,23 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   text and notes. It points at them; it doesn't change text on its own.
 - Questions from phones: five waiting per phone, 300 per show, same question twice from one
   phone refused. The presenter shows one at a time on the screen, above the caption band.
+
+- Rehearse with Coach uses the captions' speech model and microphone; captions stay off while
+  it listens. Its prompt starts with filler words so whisper writes the ums down instead of
+  tidying them away. Phrases carry their times (`Event::Line { text, start, end }`), counted
+  from when the microphone opened, so each lands on the slide that was up when it was said.
+  Pace isn't counted for Thai, which has no spaces between words. "Read out" means half or more
+  of the slide's runs of four words (eight letters in Thai) turned up in what was said.
+- The coach doesn't write auto-advance timings the way Rehearse Timings does. Keep this pace
+  stores seconds per slide in `DECKRT.PACE`; presenter view's line compares the time since the
+  show began with the kept seconds of the slides before this one plus this one's so far, and
+  says on pace within 20 s.
+- Find a Slide keeps its index in `<settings>/slide-index.json` and a 320 px JPEG per slide in
+  `<settings>/slide-thumbs/<hash>/`. A deck is read again only when its size or time changes.
+  It skips decks over 400 MB, Office lock files (`~$`), OneDrive files that are only in the
+  cloud (reading them would download them), and folders like `node_modules` and `AppData`.
+  The open deck is left out of the results. Inserting goes through `slide.reuse`, so objects
+  and their pictures come along.
 
 ## PowerPoint feel: next run
 

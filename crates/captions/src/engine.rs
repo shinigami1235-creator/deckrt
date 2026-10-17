@@ -17,8 +17,8 @@ pub enum Event {
     Ready { microphone: String },
     /// The phrase being spoken, recognised so far. Replaced by the next partial or line.
     Partial(String),
-    /// A finished phrase.
-    Line(String),
+    /// A finished phrase, with when it was spoken in seconds since the microphone opened.
+    Line { text: String, start: f64, end: f64 },
     Error(String),
 }
 
@@ -212,8 +212,8 @@ impl Captioner {
                 }
                 for cut in cutter.push(&audio) {
                     if let Cut::Phrase(p) = cut {
-                        if let Some(t) = recognise(&p, &prompt, &mut state) {
-                            send(Event::Line(t));
+                        if let Some(t) = recognise(&p.audio, &prompt, &mut state) {
+                            send(Event::Line { text: t, start: p.start, end: p.end });
                         }
                         last_partial = Instant::now();
                     }

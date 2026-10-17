@@ -102,6 +102,11 @@ pub struct Ext {
     pub captions: Option<super::captions::Live>,
     /// Captions were started (or failed) for this show.
     pub captions_tried: bool,
+    /// Rehearse with Coach: asked for when the show starts, then listening.
+    pub coach_wanted: bool,
+    pub coach: Option<super::coach::Live>,
+    /// Presenter view's line on the pace kept from a rehearsal, and whether the talk is behind.
+    pub pace: Option<(String, bool)>,
     /// The QR column beside the slide on the audience screen.
     pub qr_shown: bool,
     /// A phone's pointer, in slide units.
@@ -145,6 +150,9 @@ impl Default for Ext {
             phones: None,
             captions: None,
             captions_tried: false,
+            coach_wanted: false,
+            coach: None,
+            pace: None,
             qr_shown: false,
             pointer: None,
             ink: vec![],
@@ -640,6 +648,9 @@ pub fn draw(
     // Live captions along the bottom of the audience screen, and the question the presenter put
     // on the screen above them.
     let below = if role == Role::Audience { super::captions::draw(painter, map.srect, ext.captions.as_ref(), now) } else { 0.0 };
+    if role == Role::Audience {
+        super::coach::draw(painter, map.srect, ext.coach.as_ref());
+    }
     if let Some(q) = ext.phones.as_ref().and_then(|p| p.questions.shown_question()) {
         super::questions::draw_on_screen(painter, map.srect, q, below);
     }
@@ -1571,6 +1582,7 @@ pub fn presenter_builder(show: &Show) -> egui::ViewportBuilder {
 /// The display picker and Swap in the presenter window's toolbar.
 pub fn presenter_toolbar(ui: &mut Ui, show: &mut Show) {
     dark_widgets(ui);
+    super::coach::presenter_status(ui, show);
     if show.ext.captions.is_some() {
         ui.separator();
         super::captions::presenter_controls(ui, show);
@@ -1648,7 +1660,13 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
         }
         show.ext.phones = Some(phones);
     }
+    super::coach::logic(app, show, ctx, doc, now);
     super::captions::logic(app, show, ctx, doc, now);
+    show.ext.pace = if show.ext.coach.is_none() && !show.reading && !show.ended {
+        super::coach::pace_line(doc, idx, now - show.slide_start, now - show.show_start)
+    } else {
+        None
+    };
     let blackout = show.blank.is_some();
     let Ext { phones, states, pointer, ink, changed_at, .. } = &mut show.ext;
     if let Some(ph) = phones.as_mut()
@@ -1721,6 +1739,7 @@ pub fn draw_qr(show: &Show, painter: &egui::Painter, full: Rect, srect: Rect) {
 
 /// The end of the show: the phones are told and the results written, the pictures dropped.
 pub fn end_show(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
+    super::coach::end_show(app, show);
     if let Some(ph) = show.ext.phones.take() {
         ph.stop(&show.ext.states, doc);
     }

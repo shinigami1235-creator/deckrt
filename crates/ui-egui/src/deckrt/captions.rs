@@ -32,6 +32,11 @@ struct Saved {
 }
 
 impl Prefs {
+    /// Read the saved settings once.
+    pub fn load_pub(&mut self, dir: Option<&Path>) {
+        self.load(dir);
+    }
+
     fn load(&mut self, dir: Option<&Path>) {
         if self.loaded {
             return;
@@ -110,7 +115,8 @@ fn settings_dir(app: &SlideApp) -> Option<PathBuf> {
 pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &deckcraft_model::Presentation, now: f64) {
     let dir = settings_dir(app);
     app.deckrt.captions.load(dir.as_deref());
-    if show.reading || show.preview_only {
+    // One microphone at a time: a rehearsal with the coach has it.
+    if show.reading || show.preview_only || show.ext.coach.is_some() || show.ext.coach_wanted {
         return;
     }
     if show.ext.captions.is_none() && !show.ext.captions_tried && app.deckrt.captions.on {
@@ -158,7 +164,7 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &dec
                     live.partial = Some(t);
                     live.last_words = now;
                 }
-                deckcraft_captions::Event::Line(t) => {
+                deckcraft_captions::Event::Line { text: t, .. } => {
                     live.lines.push(t);
                     if live.lines.len() > 20 {
                         live.lines.remove(0);
@@ -192,7 +198,7 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &dec
 }
 
 /// The slide's own words: title, body text and notes.
-fn slide_texts(doc: &deckcraft_model::Presentation, idx: usize) -> Vec<String> {
+pub(crate) fn slide_texts(doc: &deckcraft_model::Presentation, idx: usize) -> Vec<String> {
     let Some(sl) = doc.slides.get(idx) else { return vec![] };
     let mut out = vec![sl.title()];
     deckcraft_model::walk(&sl.shapes, &mut |sh, _| {

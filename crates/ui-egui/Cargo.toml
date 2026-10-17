@@ -14,6 +14,7 @@ default = []
 gpu3d = ["dep:egui-wgpu", "deckcraft-model3d/gpu"]
 
 [dependencies]
+chrono.workspace = true
 deckcraft-geom = { workspace = true }
 deckcraft-color = { workspace = true }
 deckcraft-model = { workspace = true }
