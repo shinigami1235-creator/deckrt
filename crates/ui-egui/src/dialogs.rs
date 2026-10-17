@@ -1197,8 +1197,8 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 return true;
             }
             let what = if names.len() == 1 { format!("“{}”", names[0]) } else { format!("{} presentations", names.len()) };
-            ui.label(egui::RichText::new(format!("Do you want to save the changes you made to {what}?")).strong());
-            ui.label("Your changes will be lost if you don't save them.");
+            // deckrt hook: one line, no second sentence saying what Don't Save does.
+            ui.label(egui::RichText::new(format!("Save the changes to {what}?")).strong());
             ui.add_space(8.0);
             let mut done = false;
             ui.horizontal(|ui| {
@@ -1228,8 +1228,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "close" => {
             // File › Close and Ctrl+W on a presentation with unsaved changes.
             let Some(name) = app.session.active().map(|d| d.title()) else { return true };
-            ui.label(egui::RichText::new(format!("Do you want to save the changes you made to “{name}”?")).strong());
-            ui.label("Your changes will be lost if you don't save them.");
+            ui.label(egui::RichText::new(format!("Save the changes to “{name}”?")).strong()); // deckrt hook: one line
             ui.add_space(8.0);
             let mut done = false;
             ui.horizontal(|ui| {

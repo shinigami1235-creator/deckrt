@@ -581,7 +581,7 @@ impl Phones {
         let (control, position) = self.queue.standing(id);
         let target = if models.is_empty() {
             String::new()
-        } else if models.len() > 1 && (self.targets.get(id).is_some_and(|t| t == "all") || (self.targets.get(id).is_none() && self.together(models)))
+        } else if models.len() > 1 && (self.targets.get(id).is_some_and(|t| t == "all") || (!self.targets.contains_key(id) && self.together(models)))
         {
             "all".to_string()
         } else {

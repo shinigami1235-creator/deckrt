@@ -39,7 +39,7 @@ pub const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// Records kept in memory until the log file is attached.
 pub const MAX_PENDING: usize = 512;
 /// The built-in filter when `RUST_LOG` is unset or empty.
-pub const DEFAULT_FILTER: &str = "warn,deckcraft*=info";
+pub const DEFAULT_FILTER: &str = "warn,deckcraft*=info,deckrt*=info"; // deckrt: the binary's own targets too
 
 /// Per-target level filter parsed from env_logger-style directives.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -333,6 +333,7 @@ mod tests {
         let f = Filter::parse(DEFAULT_FILTER);
         assert_eq!(f.level_for("deckcraft"), LevelFilter::Info);
         assert_eq!(f.level_for("deckcraft::audio"), LevelFilter::Info);
+        assert_eq!(f.level_for("deckrt::supervise"), LevelFilter::Info);
         assert_eq!(f.level_for("deckcraft_engine::guard"), LevelFilter::Info);
         assert_eq!(f.level_for("deckcraft_pptx::read"), LevelFilter::Info);
         assert_eq!(f.level_for("wgpu_core::device"), LevelFilter::Warn);

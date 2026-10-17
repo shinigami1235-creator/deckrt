@@ -19,10 +19,11 @@ current) does not apply here.
 | `crates/phones` | The phone server: HTTP + WebSocket, the phone page (`phone/index.html`), LAN addresses, the Windows hotspot, the results file |
 | `crates/show-ext` | The connected displays (`EnumDisplayMonitors` on Windows, `xrandr` on X11) and which one the audience screen and the presenter window go to |
 | `apps/deckcraft/src/supervise.rs` | The Windows start-up supervisor: one child per graphics backend until a window comes up (see Phase D) |
-| `crates/engine/src/cmd/interactive.rs` | The engine commands: insert, update, add/remove picture, replace model, delete, list, import sidecar, refresh poster. All undoable. |
+| `crates/engine/src/cmd/interactive.rs` | The engine commands: insert, update (with `targetSlides` to name a poll's slides by index), add/remove picture, replace model, delete, list, import sidecar, refresh poster. All undoable. |
 | `crates/model/src/tag_media.rs` | `"media:<id>"` tokens inside `DECKRT.*` tag values, so the PPTX writer and the media walker can find pictures named in the JSON |
 | `crates/ui-egui/src/deckrt/` | The editor side: ribbon group (`mod.rs`), settings pane (`pane.rs`), canvas drawing (`canvas.rs`), the live model view (`model_view.rs`, `gpu.rs`), the dialogs; and the show side: `show.rs` (object states, drawing over the slide, pointer and keys, presenter rows, displays), `phones.rs` (the phones during a show, the QR, the Phones section), `pictures.rs` (media as textures) |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
+| `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
 
 ## How objects are stored
 
@@ -79,11 +80,11 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/textures.rs` | `hide: Vec<ShapeId>` passed as `RenderOpts::skip` and part of the cache key |
 | `crates/ui-egui/src/ribbon.rs` | `deckrt::ribbon_group` on the Insert tab; window title uses `APP_NAME`; the Learn More button is gone |
 | `crates/ui-egui/src/panes.rs` | the `interactive` pane |
-| `crates/ui-egui/src/dialogs.rs` | `deckrt.*` dialog ids go to `deckrt::dialog`; the close dialog's own `file.close` carries `{"discard": true}`; titles and About say deckrt; the logo is the fork's own drawing |
+| `crates/ui-egui/src/dialogs.rs` | `deckrt.*` dialog ids go to `deckrt::dialog`; the close dialog's own `file.close` carries `{"discard": true}`; the close and quit prompts are one line ("Save the changes to “talk”?"); titles and About say deckrt; the logo is the fork's own drawing |
 | `crates/ui-egui/src/backstage.rs`, `menus.rs` | names and links |
 | `crates/ui-egui/src/show.rs` | `Show.ext` (deckrt's state for the show); `zoom`, `blank`, `pen` are `pub(crate)`; `Zoom::region` and `zoom_uv` for the zoom region object; `render_frame` skips the shapes the show draws live (`hidden_in_show`); the shortcut hook at the top of `keyboard`; in `ui`: `place_show` at the start, `logic` each frame, `audience_avail` and `draw_qr` for the QR column, `audience_pointer` every frame before the click is read (a drag is many frames with no click), `took_scroll` before the page flick, `draw_audience` after the slide picture, `end_frame`, `end_show` and `restore_window` at the end; `presenter_window` takes `&mut app.deckrt`, uses `presenter_builder`, `move_presenter_if_asked`, `presenter_toolbar`, `presenter_slide` (objects and rows under the current slide), `presenter_phones` (between the next slide and the notes), and follows a poll's winning slide (`go_to`) |
 | `apps/deckcraft/src/main.rs` | the supervisor runs first on Windows (`supervise::wanted`) and logs to `logs/startup.log`; `App` marks the first frame (`supervise::mark_ready`); `--no-supervise`; `list_displays` is `deckcraft_show_ext::displays::list` |
-| `apps/deckcraft/src/logging.rs` | `AppLogger::attach_file`: an appended log file with no rotation, for the supervisor |
+| `apps/deckcraft/src/logging.rs` | `AppLogger::attach_file`: an appended log file with no rotation, for the supervisor; `DEFAULT_FILTER` lets the binary's own `deckrt*` info lines through (the supervisor's attempts) |
 | `apps/deckcraft/src/graphics.rs` | the software adapter selector for the supervisor's last attempt (`DECKRT_SOFTWARE_GPU`) |
 | `apps/deckcraft/Cargo.toml`, `build.rs`, `src/main.rs` | the binary is `deckrt`; Windows resources; `pick_open_many` and the `model` purpose; the wgpu device is handed to `deckrt::gpu::Gpu` |
 | `apps/deckcraft-cli` | the `links` subcommand is gone |
@@ -116,6 +117,14 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   child rotates `deckcraft.log` and four attempts would push the parent's lines out.
 - `crates/show-ext` allows `unsafe` (the one crate in the fork that does) for
   `EnumDisplayMonitors`; the workspace lint forbids it everywhere else.
+- The audience screen is moved with `ViewportCommand::SetMonitor(i)`, where `i` indexes winit's
+  `available_monitors()`. On Windows both that list and `crates/show-ext` come from
+  `EnumDisplayMonitors`, so the indices agree. Under Xvfb winit sees one monitor whatever
+  `xrandr --setmonitor` says (Xvfb has one CRTC), so the second-display placement cannot be
+  watched in the container; the display picker, Swap and the presenter window's move can (see
+  FORK_REPORT.md).
+- `interactive.update` takes `targetSlides: [index | null]` for a poll, so the CLI, the control
+  channel and tests can set the winning slides without knowing the `DECKRT.SLIDE` keys.
 
 ## PowerPoint feel: next run
 

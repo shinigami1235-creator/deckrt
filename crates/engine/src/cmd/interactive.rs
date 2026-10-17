@@ -32,7 +32,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_slide,
             insert
         ),
-        cmd!("interactive.update", "Change Interactive Object", [], None, "{id, object: settings} → {id}", has_doc, update),
+        cmd!(
+            "interactive.update",
+            "Change Interactive Object",
+            [],
+            None,
+            "{id, object: settings, targetSlides?: [slide index or null per poll answer]} → {id}",
+            has_doc,
+            update
+        ),
         cmd!(
             "interactive.addImage",
             "Add Picture to Interactive Object",
@@ -442,6 +450,17 @@ fn update(s: &mut Session, p: &Value) -> Result<Value> {
         && new.layers.is_empty()
     {
         new.layers = prev.layers.clone();
+    }
+    // A poll's targets by slide index (the pane and the sidecar import write the keys directly).
+    if let (Config::Poll(c), Some(targets)) = (&mut o.config, p.get("targetSlides").and_then(Value::as_array)) {
+        let mut keys = Vec::with_capacity(targets.len());
+        for t in targets {
+            keys.push(match t.as_u64() {
+                Some(i) => Some(slide_key(s, i as usize)?),
+                None => None,
+            });
+        }
+        c.targets = keys;
     }
     o.sanitize();
     let poster = match (&o.config, &old.config) {
@@ -894,6 +913,26 @@ mod tests {
         assert_eq!(r.as_array().map(Vec::len), Some(2));
         s.execute("interactive.delete", &json!({"id": id})).expect("delete");
         assert_eq!(objects(&s).len(), 1);
+    }
+
+    #[test]
+    fn a_polls_targets_can_be_given_by_slide_index() {
+        let mut s = session();
+        let _ = s.execute("slide.new", &json!({"layout": "blank"}));
+        let _ = s.execute("slide.go", &json!({"index": 0}));
+        let r = s.execute("interactive.insert", &json!({"kind": "poll"})).expect("insert");
+        let id = r["id"].as_u64().expect("id");
+        let mut o = r["object"].clone();
+        o["config"]["options"] = json!(["Ulna", "Radius"]);
+        s.execute("interactive.update", &json!({"id": id, "object": o, "targetSlides": [null, 1]})).expect("update");
+        let doc = s.doc().expect("doc");
+        let o = obj::read(doc.shape(ShapeId(id as u32)).expect("shape")).expect("object");
+        let Config::Poll(c) = &o.config else { panic!("poll") };
+        assert_eq!(c.targets.len(), 2);
+        assert!(c.targets[0].is_none());
+        let key = c.targets[1].clone().expect("a key for slide 2");
+        assert_eq!(slide_of_key(&doc.doc, &key), Some(1));
+        assert!(s.execute("interactive.update", &json!({"id": id, "object": r["object"], "targetSlides": [7]})).is_err(), "no slide 8");
     }
 
     #[test]

@@ -607,15 +607,13 @@ pub fn draw(
                     );
                 }
             }
-            (TypeState::Zoom { .. }, _) => {
-                if role == Role::Presenter {
-                    painter.rect_stroke(
-                        rect,
-                        CornerRadius::ZERO,
-                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)),
-                        StrokeKind::Inside,
-                    );
-                }
+            (TypeState::Zoom { .. }, _) if role == Role::Presenter => {
+                painter.rect_stroke(
+                    rect,
+                    CornerRadius::ZERO,
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)),
+                    StrokeKind::Inside,
+                );
             }
             _ => {}
         }
@@ -1085,28 +1083,28 @@ pub(crate) fn presenter_rows(
                 }
                 (TypeState::Poll { open, revealed, votes }, Config::Poll(c)) => {
                     let counts = poll::tally(c.options.len(), votes);
-                    if !*revealed {
-                        if row_button(ui, if *open { "Close voting" } else { "Open voting" }, *open).clicked() {
-                            ext.fire(show_zoom, it, now, ui.ctx());
-                        }
+                    if !*revealed && row_button(ui, if *open { "Close voting" } else { "Open voting" }, *open).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
                     }
-                    if c.reveal_correct && c.correct.is_some() && !*revealed && row_button(ui, "Reveal answer", false).clicked() {
-                        if let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id) {
-                            *open = false;
-                            *revealed = true;
-                            ext.changed_at = now;
-                        }
+                    if c.reveal_correct
+                        && c.correct.is_some()
+                        && !*revealed
+                        && row_button(ui, "Reveal answer", false).clicked()
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *open = false;
+                        *revealed = true;
+                        ext.changed_at = now;
                     }
                     if (c.correct.is_none() || !c.reveal_correct)
                         && !*revealed
                         && !votes.is_empty()
                         && row_button(ui, "Show the split", false).clicked()
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
                     {
-                        if let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id) {
-                            *open = false;
-                            *revealed = true;
-                            ext.changed_at = now;
-                        }
+                        *open = false;
+                        *revealed = true;
+                        ext.changed_at = now;
                     }
                     let tally: Vec<String> = c.options.iter().zip(counts.iter()).map(|(o, n)| format!("{o} {n}")).collect();
                     dim(ui, &tally.join(" · "));
@@ -1147,11 +1145,12 @@ pub(crate) fn presenter_rows(
                 (TypeState::Scrub { index }, Config::Scrub(c)) => {
                     let n = c.images.len();
                     let mut v = *index as f32;
-                    if n > 1 && ui.add(egui::Slider::new(&mut v, 0.0..=(n - 1) as f32).step_by(1.0).show_value(false)).changed() {
-                        if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id) {
-                            *index = (v.round() as usize).min(n.saturating_sub(1));
-                            ext.changed_at = now;
-                        }
+                    if n > 1
+                        && ui.add(egui::Slider::new(&mut v, 0.0..=(n - 1) as f32).step_by(1.0).show_value(false)).changed()
+                        && let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *index = (v.round() as usize).min(n.saturating_sub(1));
+                        ext.changed_at = now;
                     }
                     dim(ui, c.labels.get(*index).map(String::as_str).unwrap_or(""));
                     if row_button(ui, "Next", false).clicked() {
@@ -1170,7 +1169,7 @@ pub(crate) fn presenter_rows(
                             ext.changed_at = now;
                         }
                     }
-                    let aspect = (it.xfrm.w / it.xfrm.h.max(1e-6)) as f64;
+                    let aspect = it.xfrm.w / it.xfrm.h.max(1e-6);
                     let r = measure::reading(*preset, handles, aspect);
                     dim(ui, &r.text);
                     if row_button(ui, "Reset", false).clicked() {
@@ -1362,133 +1361,6 @@ pub fn poster_of(sh: &Shape) -> Option<MediaId> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_map_goes_both_ways() {
-        let mut doc = Presentation::default();
-        doc.slide_size = deckcraft_geom::Size::new(960.0, 540.0);
-        let m = Map::new(Rect::from_min_size(pos2(100.0, 50.0), vec2(960.0, 540.0)), unit(), &doc);
-        let p = m.to_screen(480.0, 270.0);
-        assert_eq!(p, pos2(580.0, 320.0));
-        let (x, y) = m.to_unit(p);
-        assert!((x - 0.5).abs() < 1e-6 && (y - 0.5).abs() < 1e-6);
-        let z = Map::new(m.srect, Rect::from_min_size(pos2(0.5, 0.5), vec2(0.5, 0.5)), &doc);
-        assert_eq!(z.to_screen(480.0, 270.0), pos2(100.0, 50.0));
-    }
-
-    #[test]
-    fn shortcuts_fire_the_object_with_that_key() {
-        let mut s = deckcraft_engine::Session::with_new();
-        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
-        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"shortcut": "p"}})).expect("insert");
-        let doc = s.doc().expect("doc").doc.clone();
-        let mut ext = Ext::default();
-        let mut zoom = None;
-        let ctx = egui::Context::default();
-        assert!(shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::NONE, 0.0, &ctx));
-        let open = ext.states.values().any(|s| matches!(s.st, TypeState::Popup { open: true }));
-        assert!(open);
-        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::Q, egui::Modifiers::NONE, 0.0, &ctx));
-        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::COMMAND, 0.0, &ctx));
-    }
-
-    #[test]
-    fn a_zoom_region_sets_the_shows_zoom_and_follows_its_dismissal() {
-        let mut s = deckcraft_engine::Session::with_new();
-        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
-        s.execute("interactive.insert", &serde_json::json!({"kind": "zoom", "rect": [240.0, 135.0, 480.0, 270.0]})).expect("insert");
-        let doc = s.doc().expect("doc").doc.clone();
-        let mut ext = Ext::default();
-        ext.sync_slide(&doc, 1);
-        let it = objects_on(&doc, 1).pop().expect("the zoom");
-        let mut zoom = None;
-        let ctx = egui::Context::default();
-        assert!(ext.fire(&mut zoom, &it, 0.0, &ctx));
-        assert!(zoom.is_some());
-        zoom = None;
-        ext.follow_zoom(&zoom);
-        assert!(matches!(ext.states[&it.id].st, TypeState::Zoom { zoomed: false, .. }));
-    }
-
-    /// Both windows share the object states and each reads its own pointer: a drag begun on the
-    /// audience screen must survive the presenter window's frames, where no button is down.
-    #[test]
-    fn a_drag_in_one_window_survives_the_other_windows_frames() {
-        let mut s = deckcraft_engine::Session::with_new();
-        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
-        let png = {
-            let mut out = Vec::new();
-            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
-            image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).expect("png");
-            out
-        };
-        let png = deckcraft_engine::cmd::base64_encode(&png);
-        let files = serde_json::json!([{"data": png, "name": "a.png"}, {"data": png, "name": "b.png"}]);
-        s.execute("interactive.insert", &serde_json::json!({"kind": "wipe", "files": files, "rect": [0.0, 0.0, 960.0, 540.0]})).expect("insert");
-        let doc = std::sync::Arc::new(s.doc().expect("doc").doc.clone());
-        let mut ext = Ext::default();
-        let mut zoom = None;
-        let ctx = egui::Context::default();
-        let map = Map::new(Rect::from_min_size(pos2(0.0, 0.0), vec2(960.0, 540.0)), unit(), &doc);
-        let press = egui::RawInput {
-            events: vec![
-                egui::Event::PointerMoved(pos2(480.0, 270.0)),
-                egui::Event::PointerButton {
-                    pos: pos2(480.0, 270.0),
-                    button: egui::PointerButton::Primary,
-                    pressed: true,
-                    modifiers: egui::Modifiers::NONE,
-                },
-            ],
-            ..Default::default()
-        };
-        ctx.run_ui(press, |ui| {
-            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.0, true);
-        })
-        .drop_without_applying_deltas();
-        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the press starts the drag");
-        // The presenter window's frame: no button down there.
-        let other = egui::Context::default();
-        other
-            .run_ui(egui::RawInput::default(), |ui| {
-                pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Presenter, 0.1, false);
-            })
-            .drop_without_applying_deltas();
-        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the other window leaves it alone");
-        // The audience pointer moves: the divider follows.
-        let moved = egui::RawInput { events: vec![egui::Event::PointerMoved(pos2(240.0, 270.0))], ..Default::default() };
-        ctx.run_ui(moved, |ui| {
-            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.2, true);
-        })
-        .drop_without_applying_deltas();
-        let pos = ext.states.values().find_map(|s| match s.st {
-            TypeState::Wipe { position } => Some(position),
-            _ => None,
-        });
-        assert!(pos.is_some_and(|p| (p - 0.25).abs() < 0.01), "{pos:?}");
-    }
-
-    #[test]
-    fn an_unpinned_injection_map_drops_its_points_on_the_next_slide() {
-        let mut s = deckcraft_engine::Session::with_new();
-        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
-        s.execute("interactive.insert", &serde_json::json!({"kind": "injection_map"})).expect("insert");
-        let doc = s.doc().expect("doc").doc.clone();
-        let mut ext = Ext::default();
-        ext.sync_slide(&doc, 1);
-        let id = objects_on(&doc, 1).pop().expect("the map").id;
-        if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&id) {
-            points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0 });
-        }
-        ext.sync_slide(&doc, 0);
-        ext.sync_slide(&doc, 1);
-        assert!(matches!(&ext.states[&id].st, TypeState::InjectionMap { points, .. } if points.is_empty()));
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Glue called from upstream's `show.rs`
 
@@ -1628,4 +1500,130 @@ pub fn presenter_phones(ui: &mut Ui, show: &mut Show, rect: Rect) -> f32 {
         return 0.0;
     }
     super::phones::section(ui, &mut show.ext, rect) + 8.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_map_goes_both_ways() {
+        let doc = Presentation { slide_size: deckcraft_geom::Size::new(960.0, 540.0), ..Default::default() };
+        let m = Map::new(Rect::from_min_size(pos2(100.0, 50.0), vec2(960.0, 540.0)), unit(), &doc);
+        let p = m.to_screen(480.0, 270.0);
+        assert_eq!(p, pos2(580.0, 320.0));
+        let (x, y) = m.to_unit(p);
+        assert!((x - 0.5).abs() < 1e-6 && (y - 0.5).abs() < 1e-6);
+        let z = Map::new(m.srect, Rect::from_min_size(pos2(0.5, 0.5), vec2(0.5, 0.5)), &doc);
+        assert_eq!(z.to_screen(480.0, 270.0), pos2(100.0, 50.0));
+    }
+
+    #[test]
+    fn shortcuts_fire_the_object_with_that_key() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"shortcut": "p"}})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        assert!(shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::NONE, 0.0, &ctx));
+        let open = ext.states.values().any(|s| matches!(s.st, TypeState::Popup { open: true }));
+        assert!(open);
+        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::Q, egui::Modifiers::NONE, 0.0, &ctx));
+        assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::COMMAND, 0.0, &ctx));
+    }
+
+    #[test]
+    fn a_zoom_region_sets_the_shows_zoom_and_follows_its_dismissal() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "zoom", "rect": [240.0, 135.0, 480.0, 270.0]})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        ext.sync_slide(&doc, 1);
+        let it = objects_on(&doc, 1).pop().expect("the zoom");
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        assert!(ext.fire(&mut zoom, &it, 0.0, &ctx));
+        assert!(zoom.is_some());
+        zoom = None;
+        ext.follow_zoom(&zoom);
+        assert!(matches!(ext.states[&it.id].st, TypeState::Zoom { zoomed: false, .. }));
+    }
+
+    /// Both windows share the object states and each reads its own pointer: a drag begun on the
+    /// audience screen must survive the presenter window's frames, where no button is down.
+    #[test]
+    fn a_drag_in_one_window_survives_the_other_windows_frames() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        let png = {
+            let mut out = Vec::new();
+            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]));
+            image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).expect("png");
+            out
+        };
+        let png = deckcraft_engine::cmd::base64_encode(&png);
+        let files = serde_json::json!([{"data": png, "name": "a.png"}, {"data": png, "name": "b.png"}]);
+        s.execute("interactive.insert", &serde_json::json!({"kind": "wipe", "files": files, "rect": [0.0, 0.0, 960.0, 540.0]})).expect("insert");
+        let doc = std::sync::Arc::new(s.doc().expect("doc").doc.clone());
+        let mut ext = Ext::default();
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        let map = Map::new(Rect::from_min_size(pos2(0.0, 0.0), vec2(960.0, 540.0)), unit(), &doc);
+        let press = egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(pos2(480.0, 270.0)),
+                egui::Event::PointerButton {
+                    pos: pos2(480.0, 270.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            ..Default::default()
+        };
+        ctx.run_ui(press, |ui| {
+            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.0, true);
+        })
+        .drop_without_applying_deltas();
+        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the press starts the drag");
+        // The presenter window's frame: no button down there.
+        let other = egui::Context::default();
+        other
+            .run_ui(egui::RawInput::default(), |ui| {
+                pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Presenter, 0.1, false);
+            })
+            .drop_without_applying_deltas();
+        assert!(matches!(ext.drag, Some(Drag::Wipe { .. })), "the other window leaves it alone");
+        // The audience pointer moves: the divider follows.
+        let moved = egui::RawInput { events: vec![egui::Event::PointerMoved(pos2(240.0, 270.0))], ..Default::default() };
+        ctx.run_ui(moved, |ui| {
+            pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Audience, 0.2, true);
+        })
+        .drop_without_applying_deltas();
+        let pos = ext.states.values().find_map(|s| match s.st {
+            TypeState::Wipe { position } => Some(position),
+            _ => None,
+        });
+        assert!(pos.is_some_and(|p| (p - 0.25).abs() < 0.01), "{pos:?}");
+    }
+
+    #[test]
+    fn an_unpinned_injection_map_drops_its_points_on_the_next_slide() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "injection_map"})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut ext = Ext::default();
+        ext.sync_slide(&doc, 1);
+        let id = objects_on(&doc, 1).pop().expect("the map").id;
+        if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&id) {
+            points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0 });
+        }
+        ext.sync_slide(&doc, 0);
+        ext.sync_slide(&doc, 1);
+        assert!(matches!(&ext.states[&id].st, TypeState::InjectionMap { points, .. } if points.is_empty()));
+    }
 }

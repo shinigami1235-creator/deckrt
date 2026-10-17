@@ -107,7 +107,7 @@ fn run_child_with(exe: &Path, args: &[String], attempt: Attempt, ready: &Path, e
     if came_up || status.success() {
         Outcome::Ran(status.code().unwrap_or(if status.success() { 0 } else { 1 }))
     } else {
-        Outcome::FailedToStart(format!("exit status {status}"))
+        Outcome::FailedToStart(status.to_string())
     }
 }
 
