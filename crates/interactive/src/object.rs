@@ -217,9 +217,56 @@ impl Default for PopupConfig {
     }
 }
 
+/// What the room answers with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PollKind {
+    /// One of the answers (the poll before there were kinds).
+    #[default]
+    Choice,
+    /// Up to three words each; the screen shows them sized by how often they came.
+    WordCloud,
+    /// One short answer each, listed on the screen.
+    FreeText,
+    /// A number from 1 to `scale`; the screen shows the average and the spread.
+    Rating,
+    /// The answers put in order; the screen shows the room's order.
+    Ranking,
+}
+
+impl PollKind {
+    pub const ALL: [PollKind; 5] = [PollKind::Choice, PollKind::WordCloud, PollKind::FreeText, PollKind::Rating, PollKind::Ranking];
+    pub fn label(self) -> &'static str {
+        match self {
+            PollKind::Choice => "Multiple choice",
+            PollKind::WordCloud => "Word cloud",
+            PollKind::FreeText => "Free text",
+            PollKind::Rating => "Rating",
+            PollKind::Ranking => "Ranking",
+        }
+    }
+    pub fn id(self) -> &'static str {
+        match self {
+            PollKind::Choice => "choice",
+            PollKind::WordCloud => "word_cloud",
+            PollKind::FreeText => "free_text",
+            PollKind::Rating => "rating",
+            PollKind::Ranking => "ranking",
+        }
+    }
+    /// The kinds that use the answer list.
+    pub fn has_options(self) -> bool {
+        matches!(self, PollKind::Choice | PollKind::Ranking)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PollConfig {
+    /// Multiple choice unless set; older decks have no kind.
+    pub kind: PollKind,
+    /// The top of a rating scale (2 to 10).
+    pub scale: u32,
     pub question: String,
     /// Two or more.
     pub options: Vec<String>,
@@ -233,6 +280,8 @@ pub struct PollConfig {
 impl Default for PollConfig {
     fn default() -> Self {
         PollConfig {
+            kind: PollKind::Choice,
+            scale: 5,
             question: "Type the question here.".into(),
             options: vec!["Yes".into(), "No".into()],
             correct: None,

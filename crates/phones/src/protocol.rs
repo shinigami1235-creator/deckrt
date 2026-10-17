@@ -84,7 +84,32 @@ pub enum PhoneMessage {
     /// `all` for every model at once. Only a phone holding control is
     /// listened to; the presenter checks the id against the slide.
     Target { id: String },
+    /// A typed answer to the poll `poll`: words for a word cloud, one answer
+    /// for free text. Replaces the phone's earlier answer.
+    Text { poll: String, text: String },
+    /// The poll's answers in this phone's order (ranking), by index.
+    Rank { poll: String, order: Vec<u32> },
+    /// A question for the presenter. `anon` hides the phone's name from the
+    /// room and from the presenter.
+    Ask {
+        text: String,
+        #[serde(default)]
+        anon: bool,
+    },
+    /// Back a question (`on: false` takes the vote back).
+    Upvote {
+        q: String,
+        #[serde(default = "yes")]
+        on: bool,
+    },
 }
+
+fn yes() -> bool {
+    true
+}
+
+/// Longest typed answer or question a phone may send, in characters.
+pub const TEXT_MAX_CHARS: usize = 300;
 
 /// Points one `draw` frame may carry. A frame arrives up to 60 times a
 /// second, so this is far more than a finger produces.
@@ -105,7 +130,8 @@ impl PhoneMessage {
     pub fn class(&self) -> Class {
         match self {
             PhoneMessage::Join { .. } => Class::Join,
-            PhoneMessage::Vote { .. } => Class::Vote,
+            PhoneMessage::Vote { .. } | PhoneMessage::Text { .. } | PhoneMessage::Rank { .. } | PhoneMessage::Upvote { .. } => Class::Vote,
+            PhoneMessage::Ask { .. } => Class::Control,
             PhoneMessage::Control { .. } | PhoneMessage::Target { .. } => Class::Control,
             PhoneMessage::Drag { .. } | PhoneMessage::Touch { .. } | PhoneMessage::Draw { .. } | PhoneMessage::Erase { .. } => Class::Stream,
             PhoneMessage::Ping { .. } => Class::Ping,
@@ -137,6 +163,14 @@ impl PhoneMessage {
                     && points.iter().all(|p| finite(p[0]) && finite(p[1]) && (-0.5..=1.5).contains(&p[0]) && (-0.5..=1.5).contains(&p[1]))
             }
             PhoneMessage::Erase { x, y, at } => finite(*at) && finite(*x) && finite(*y) && (-0.5..=1.5).contains(x) && (-0.5..=1.5).contains(y),
+            PhoneMessage::Text { poll, text } => {
+                !poll.is_empty() && poll.len() <= 64 && !text.trim().is_empty() && text.chars().count() <= TEXT_MAX_CHARS
+            }
+            PhoneMessage::Rank { poll, order } => {
+                !poll.is_empty() && poll.len() <= 64 && !order.is_empty() && order.len() <= 64 && order.iter().all(|o| *o < 64)
+            }
+            PhoneMessage::Ask { text, .. } => !text.trim().is_empty() && text.chars().count() <= TEXT_MAX_CHARS,
+            PhoneMessage::Upvote { q, .. } => !q.is_empty() && q.len() <= 32,
         }
     }
 }
@@ -458,5 +492,16 @@ mod tests {
         assert_eq!(a.len(), 10);
         assert_ne!(a, b);
         assert!(a.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn typed_answers_rankings_and_questions_parse_within_limits() {
+        assert_eq!(parse_phone(r#"{"t":"text","poll":"12","text":"collagen, elastin"}"#), Some(PhoneMessage::Text { poll: "12".into(), text: "collagen, elastin".into() }));
+        assert_eq!(parse_phone(r#"{"t":"rank","poll":"12","order":[2,0,1]}"#), Some(PhoneMessage::Rank { poll: "12".into(), order: vec![2, 0, 1] }));
+        assert_eq!(parse_phone(r#"{"t":"ask","text":"Why?"}"#), Some(PhoneMessage::Ask { text: "Why?".into(), anon: false }));
+        assert_eq!(parse_phone(r#"{"t":"upvote","q":"q3"}"#), Some(PhoneMessage::Upvote { q: "q3".into(), on: true }));
+        assert_eq!(parse_phone(r#"{"t":"ask","text":"   "}"#), None);
+        let long = "x".repeat(TEXT_MAX_CHARS + 1);
+        assert_eq!(parse_phone(&format!(r#"{{"t":"text","poll":"1","text":"{long}"}}"#)), None);
     }
 }

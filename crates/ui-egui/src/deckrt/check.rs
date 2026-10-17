@@ -136,9 +136,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> 
             if ui.add(framed(ui, "Cancel", 72.0)).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 close = true;
             }
-        } else if ui.add(framed(ui, "Close", 72.0)).clicked()
-            || ui.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter))
-        {
+        } else if ui.add(framed(ui, "Close", 72.0)).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)) {
             close = true;
         }
         if ui.add(framed(ui, "Check again", 0.0)).clicked() {

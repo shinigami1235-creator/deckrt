@@ -43,8 +43,14 @@ pub enum TypeState {
         open: bool,
         /// The right answer is marked on the audience screen.
         revealed: bool,
-        /// Phone id → option.
+        /// Phone id → option (a rating's value is stored as `value - 1`).
         votes: BTreeMap<String, usize>,
+        /// Phone id → words (word cloud) or one answer (free text).
+        texts: BTreeMap<String, Vec<String>>,
+        /// Phone id → the answers in that phone's order (ranking).
+        ranks: BTreeMap<String, Vec<usize>>,
+        /// Phones whose free-text answer the presenter hid from the screen.
+        hidden: std::collections::BTreeSet<String>,
     },
     Scrub {
         index: usize,
@@ -84,7 +90,7 @@ impl ObjectState {
             Config::Wipe(c) => TypeState::Wipe { position: c.initial_position.clamp(0.0, 1.0) },
             Config::Zoom(_) => TypeState::Zoom { zoomed: false, pan: [0.0, 0.0], since: f64::NEG_INFINITY },
             Config::Popup(_) => TypeState::Popup { open: false },
-            Config::Poll(_) => TypeState::Poll { open: false, revealed: false, votes: BTreeMap::new() },
+            Config::Poll(_) => TypeState::Poll { open: false, revealed: false, votes: BTreeMap::new(), texts: BTreeMap::new(), ranks: BTreeMap::new(), hidden: Default::default() },
             Config::Scrub(c) => TypeState::Scrub { index: c.initial_index.min(c.images.len().saturating_sub(1)) },
             Config::Measure(c) => TypeState::Measure { preset: c.preset, handles: measure::default_handles(c.preset) },
             Config::InjectionMap(c) => TypeState::InjectionMap { points: vec![], product: 0, dose: injection::default_dose(c, 0), pinned: false },

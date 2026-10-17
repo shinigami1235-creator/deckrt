@@ -36,6 +36,7 @@ pub mod model_view;
 pub mod pane;
 pub mod phones;
 pub mod pictures;
+pub mod questions;
 pub mod show;
 
 use deckcraft_interactive::object::{self as obj, Kind};

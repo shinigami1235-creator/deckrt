@@ -2,7 +2,7 @@
 //! Delete, and an Advanced section that holds the rest.
 
 use deckcraft_interactive::measure::Preset;
-use deckcraft_interactive::object::{self as obj, Anchor, Config, InteractiveObject, Kind, MediaRef, PopupContent, Product, Trigger};
+use deckcraft_interactive::object::{self as obj, Anchor, Config, InteractiveObject, Kind, MediaRef, PollKind, PopupContent, Product, Trigger};
 use deckcraft_model::{MediaId, ShapeId};
 use egui::{Color32, RichText, Ui};
 use serde_json::json;
@@ -327,64 +327,96 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             hint(ui, "Use the box makes the region the object's own box.");
         }
         Config::Poll(c) => {
+            label(ui, "Type");
+            ui.horizontal_wrapped(|ui| {
+                for k in PollKind::ALL {
+                    if ui.selectable_label(c.kind == k, k.label()).clicked() && c.kind != k {
+                        c.kind = k;
+                        changed = true;
+                    }
+                }
+            });
             label(ui, "Question");
             if let Some(v) = text_field(ui, fid("question"), &c.question, false) {
                 c.question = v;
                 changed = true;
             }
-            label(ui, "Answers");
-            let n = c.options.len();
-            for i in 0..n {
-                ui.horizontal(|ui| {
-                    // The tick marks the right answer; a dim one is the button to make it so.
-                    let right = c.correct == Some(i);
-                    let tick = RichText::new("✓").color(if right { t.accent_text } else { t.text_dim });
-                    let r =
-                        ui.add(egui::Button::new(tick).fill(if right { t.accent } else { Color32::TRANSPARENT }).min_size(egui::vec2(22.0, 20.0)));
-                    if r.on_hover_text(if right { "The right answer" } else { "Make this the right answer" }).clicked() && !right {
-                        c.correct = Some(i);
-                        changed = true;
-                    }
-                    let cur = c.options.get(i).cloned().unwrap_or_default();
-                    ui.scope(|ui| {
-                        ui.set_max_width((ui.available_width() - 76.0).max(40.0));
-                        if let Some(v) = text_field(ui, fid(&format!("opt{i}")), &cur, false) {
-                            c.options[i] = v;
+            match c.kind {
+                PollKind::WordCloud => hint(ui, "Phones send up to three words each. The most common show largest."),
+                PollKind::FreeText => hint(ui, "Phones send one short answer each. You can hide an answer from presenter view."),
+                PollKind::Ranking => hint(ui, "Phones put the answers in order. The screen shows the room's order."),
+                _ => {}
+            }
+            if c.kind == PollKind::Rating {
+                label(ui, "Scale");
+                ui.horizontal_wrapped(|ui| {
+                    for top in [3u32, 5, 7, 10] {
+                        if ui.selectable_label(c.scale == top, format!("1 to {top}")).clicked() && c.scale != top {
+                            c.scale = top;
                             changed = true;
                         }
-                    });
-                    if ui.add_enabled(n > 2, egui::Button::new("Remove")).clicked() {
-                        c.options.remove(i);
-                        if i < c.targets.len() {
-                            c.targets.remove(i);
-                        }
-                        c.correct = match c.correct {
-                            Some(k) if k == i => None,
-                            Some(k) if k > i => Some(k - 1),
-                            k => k,
-                        };
-                        changed = true;
                     }
                 });
             }
-            ui.horizontal_wrapped(|ui| {
-                if ui.add_enabled(n < 64, egui::Button::new("Add answer")).clicked() {
-                    c.options.push(String::new());
+            if c.kind.has_options() {
+                let ranking = c.kind == PollKind::Ranking;
+                label(ui, "Answers");
+                let n = c.options.len();
+                for i in 0..n {
+                    ui.horizontal(|ui| {
+                        // The tick marks the right answer; a dim one is the button to make it so.
+                        let right = c.correct == Some(i);
+                        if !ranking {
+                            let tick = RichText::new("✓").color(if right { t.accent_text } else { t.text_dim });
+                            let r = ui.add(
+                                egui::Button::new(tick).fill(if right { t.accent } else { Color32::TRANSPARENT }).min_size(egui::vec2(22.0, 20.0)),
+                            );
+                            if r.on_hover_text(if right { "The right answer" } else { "Make this the right answer" }).clicked() && !right {
+                                c.correct = Some(i);
+                                changed = true;
+                            }
+                        }
+                        let cur = c.options.get(i).cloned().unwrap_or_default();
+                        ui.scope(|ui| {
+                            ui.set_max_width((ui.available_width() - 76.0).max(40.0));
+                            if let Some(v) = text_field(ui, fid(&format!("opt{i}")), &cur, false) {
+                                c.options[i] = v;
+                                changed = true;
+                            }
+                        });
+                        if ui.add_enabled(n > 2, egui::Button::new("Remove")).clicked() {
+                            c.options.remove(i);
+                            if i < c.targets.len() {
+                                c.targets.remove(i);
+                            }
+                            c.correct = match c.correct {
+                                Some(k) if k == i => None,
+                                Some(k) if k > i => Some(k - 1),
+                                k => k,
+                            };
+                            changed = true;
+                        }
+                    });
+                }
+                ui.horizontal_wrapped(|ui| {
+                    if ui.add_enabled(n < 64, egui::Button::new("Add answer")).clicked() {
+                        c.options.push(String::new());
+                        changed = true;
+                    }
+                    if !ranking && ui.button("True or false").clicked() {
+                        c.options = vec!["True".into(), "False".into()];
+                        c.correct = None;
+                        c.targets.clear();
+                        changed = true;
+                    }
+                    if !ranking && ui.add_enabled(c.correct.is_some(), egui::Button::new("No right answer")).clicked() {
+                        c.correct = None;
+                        changed = true;
+                    }
+                });
+                if !ranking && ui.checkbox(&mut c.reveal_correct, "The right answer can be revealed").changed() {
                     changed = true;
                 }
-                if ui.button("True or false").clicked() {
-                    c.options = vec!["True".into(), "False".into()];
-                    c.correct = None;
-                    c.targets.clear();
-                    changed = true;
-                }
-                if ui.add_enabled(c.correct.is_some(), egui::Button::new("No right answer")).clicked() {
-                    c.correct = None;
-                    changed = true;
-                }
-            });
-            if ui.checkbox(&mut c.reveal_correct, "The right answer can be revealed").changed() {
-                changed = true;
             }
         }
         Config::Measure(c) => {
@@ -672,7 +704,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
             c.panel_size = [v[2], v[3]];
             hint(ui, "In slide units. The panel opens over the slide at this place.");
         }
-        Config::Poll(c) => {
+        Config::Poll(c) if c.kind == PollKind::Choice => {
             label(ui, "After the vote");
             hint(ui, "The winning answer offers its slide to the presenter.");
             let slides: Vec<(usize, String)> = app
@@ -727,6 +759,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 });
             }
         }
+        Config::Poll(_) => {}
         Config::Measure(c) => {
             ui.horizontal(|ui| {
                 ui.label("Line width");

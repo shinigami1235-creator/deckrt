@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use deckcraft_interactive::injection::{self, Point};
 use deckcraft_interactive::measure;
-use deckcraft_interactive::object::{self as obj, Config, InteractiveObject, Kind, PopupContent, Trigger};
+use deckcraft_interactive::object::{self as obj, Config, InteractiveObject, Kind, PollKind, PopupContent, Trigger};
 use deckcraft_interactive::state::{ObjectState, TypeState, zoom_view};
 use deckcraft_interactive::{poll, state};
 use deckcraft_model::{MediaId, Presentation, Shape, ShapeId, ShapeKind};
@@ -551,8 +551,9 @@ pub fn draw(
                     }
                 }
             }
-            (TypeState::Poll { open, revealed, votes }, Config::Poll(c)) => {
-                draw_poll(painter, rect, c, *open, *revealed, votes, role);
+            (TypeState::Poll { open, revealed, votes, texts, ranks, hidden }, Config::Poll(c)) => {
+                let answers = PollAnswers { votes, texts, ranks, hidden };
+                draw_poll(painter, rect, c, *open, *revealed, &answers, role);
             }
             (TypeState::Measure { preset, handles }, Config::Measure(c)) => {
                 let col = color32(&c.color);
@@ -630,6 +631,10 @@ pub fn draw(
         let pts: Vec<Pos2> = s.points.iter().map(|p| map.to_screen(p[0] * map.sw, p[1] * map.sh)).collect();
         painter.add(egui::Shape::line(pts, Stroke::new(ink_w, s.color)));
     }
+    // The question the presenter put on the screen.
+    if let Some(q) = ext.phones.as_ref().and_then(|p| p.questions.shown_question()) {
+        super::questions::draw_on_screen(painter, map.srect, q);
+    }
     // A phone's pointer.
     if let Some([x, y]) = ext.pointer {
         let p = map.to_screen(x * map.sw, y * map.sh);
@@ -645,7 +650,219 @@ fn unit() -> Rect {
 
 /// The poll panel: the question, and the answers. The room sees how many have voted while voting
 /// is open and the split only after the reveal; the presenter's own view shows the split all along.
-fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role) {
+/// What the room has given a poll so far.
+pub struct PollAnswers<'a> {
+    pub votes: &'a BTreeMap<String, usize>,
+    pub texts: &'a BTreeMap<String, Vec<String>>,
+    pub ranks: &'a BTreeMap<String, Vec<usize>>,
+    pub hidden: &'a std::collections::BTreeSet<String>,
+}
+
+/// The poll panel for each kind. The room sees how many have answered while answers are open and
+/// the results after the reveal (Show results); the presenter's own view shows them all along.
+fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, a: &PollAnswers, role: Role) {
+    match c.kind {
+        PollKind::Choice => draw_choice(painter, rect, c, open, revealed, a.votes, role),
+        kind => draw_typed(painter, rect, c, kind, open, revealed, a, role),
+    }
+}
+
+/// The panel's frame and question; returns the area left under the question and the text size.
+fn poll_frame(painter: &egui::Painter, rect: Rect, question: &str, rows: f32) -> (Rect, f32) {
+    painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(0x1e, 0x29, 0x3b));
+    let pad = (rect.width().min(rect.height()) * 0.06).clamp(6.0, 20.0);
+    let inner = rect.shrink(pad);
+    let qsize = (inner.height() / (rows + 2.5)).clamp(9.0, 30.0);
+    let q = painter.layout(question.to_string(), FontId::proportional(qsize), Color32::WHITE, inner.width());
+    let qh = q.size().y;
+    painter.galley(inner.min, q, Color32::WHITE);
+    (Rect::from_min_max(pos2(inner.min.x, inner.min.y + qh + 8.0), inner.max), qsize)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_typed(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, kind: PollKind, open: bool, revealed: bool, a: &PollAnswers, role: Role) {
+    let painter = &painter.with_clip_rect(rect);
+    let n = poll::answered(a.votes, a.texts, a.ranks);
+    let (area, qsize) = poll_frame(painter, rect, &c.question, 5.0);
+    let small = qsize * 0.8;
+    let show = revealed || role == Role::Presenter;
+    let status = format!("{}{n} answer{}", if open && !revealed { "Answers open · " } else { "" }, if n == 1 { "" } else { "s" });
+    let body = Rect::from_min_max(area.min, pos2(area.max.x, area.max.y - small - 6.0));
+    painter.text(pos2(area.min.x, area.max.y), Align2::LEFT_BOTTOM, status, FontId::proportional(small * 0.9), Color32::from_gray(200));
+    if !show {
+        let hint = match kind {
+            PollKind::WordCloud => "Words appear here when the presenter shows them.",
+            PollKind::FreeText => "Answers appear here when the presenter shows them.",
+            PollKind::Rating => "The result appears here when the presenter shows it.",
+            _ => "The room's order appears here when the presenter shows it.",
+        };
+        painter.text(body.center(), Align2::CENTER_CENTER, hint, FontId::proportional(small), Color32::from_gray(170));
+        return;
+    }
+    match kind {
+        PollKind::WordCloud => {
+            let words = poll::cloud(a.texts);
+            draw_cloud(painter, body, &words, qsize);
+        }
+        PollKind::FreeText => {
+            let list = poll::answers(a.texts, a.hidden);
+            // Larger when there are few answers; never smaller than the status line.
+            let size = (body.height() / (list.len().max(4) as f32 * 1.9)).clamp(small, qsize * 1.3);
+            let mut y = body.min.y;
+            for (_, text) in list.iter().rev() {
+                let g = painter.layout(text.to_string(), FontId::proportional(size), Color32::WHITE, body.width() - 16.0);
+                let h = g.size().y + 10.0;
+                if y + h > body.max.y {
+                    break;
+                }
+                let card = Rect::from_min_size(pos2(body.min.x, y), vec2(body.width(), h));
+                painter.rect_filled(card, CornerRadius::same(5), Color32::from_white_alpha(16));
+                painter.galley(card.min + vec2(8.0, 5.0), g, Color32::WHITE);
+                y += h + 6.0;
+            }
+        }
+        PollKind::Rating => {
+            let (counts, avg) = poll::rating(c.scale, a.votes);
+            let big = (body.height() * 0.32).clamp(16.0, 90.0);
+            let avg_text = match avg {
+                Some(v) => format!("{v:.1} out of {}", c.scale.clamp(2, 10)),
+                None => "No ratings yet".to_string(),
+            };
+            painter.text(pos2(body.min.x, body.min.y), Align2::LEFT_TOP, avg_text, FontId::proportional(big * 0.7), Color32::WHITE);
+            let bars = Rect::from_min_max(pos2(body.min.x, body.min.y + big * 0.9), body.max);
+            let max = counts.iter().copied().max().unwrap_or(0).max(1) as f32;
+            let k = counts.len().max(1) as f32;
+            let w = bars.width() / k;
+            for (i, cnt) in counts.iter().enumerate() {
+                let x = bars.min.x + w * i as f32;
+                let label_h = small + 4.0;
+                let hmax = (bars.height() - label_h * 2.0).max(4.0);
+                let h = hmax * (*cnt as f32 / max);
+                let bar = Rect::from_min_max(pos2(x + w * 0.15, bars.max.y - label_h - h), pos2(x + w * 0.85, bars.max.y - label_h));
+                painter.rect_filled(bar, CornerRadius::same(3), Color32::from_rgb(0x3b, 0x5b, 0x9a));
+                painter.text(
+                    pos2(x + w / 2.0, bars.max.y),
+                    Align2::CENTER_BOTTOM,
+                    format!("{}", i + 1),
+                    FontId::proportional(small),
+                    Color32::from_gray(210),
+                );
+                if *cnt > 0 {
+                    painter.text(
+                        pos2(x + w / 2.0, bar.min.y - 2.0),
+                        Align2::CENTER_BOTTOM,
+                        format!("{cnt}"),
+                        FontId::proportional(small * 0.85),
+                        Color32::WHITE,
+                    );
+                }
+            }
+        }
+        _ => {
+            let order = poll::ranking(c.options.len(), a.ranks);
+            let rows = order.len().max(1) as f32;
+            let row_h = (body.height() / rows).clamp(small + 6.0, small * 4.0);
+            let small = (row_h * 0.42).clamp(small, qsize * 1.3);
+            let k = c.options.len().max(1) as f64;
+            for (place, (o, avg)) in order.iter().enumerate() {
+                let y = body.min.y + row_h * place as f32;
+                let row = Rect::from_min_max(pos2(body.min.x, y), pos2(body.max.x, y + row_h - 4.0));
+                painter.rect_filled(row, CornerRadius::same(4), Color32::from_white_alpha(14));
+                if n > 0 {
+                    // Longer bar for a better (smaller) average place.
+                    let frac = ((k + 1.0 - avg) / k).clamp(0.0, 1.0) as f32;
+                    let bar = Rect::from_min_max(row.min, pos2(row.min.x + row.width() * frac, row.max.y));
+                    painter.rect_filled(bar, CornerRadius::same(4), Color32::from_rgb(0x3b, 0x5b, 0x9a));
+                }
+                let label = format!("{}.  {}", place + 1, c.options.get(*o).cloned().unwrap_or_default());
+                painter.text(pos2(row.min.x + 8.0, row.center().y), Align2::LEFT_CENTER, label, FontId::proportional(small), Color32::WHITE);
+            }
+        }
+    }
+}
+
+/// Word cloud: words in rows, the most given largest, centred, as many as fit.
+fn draw_cloud(painter: &egui::Painter, area: Rect, words: &[(String, u32)], qsize: f32) {
+    if words.is_empty() {
+        painter.text(area.center(), Align2::CENTER_CENTER, "No words yet", FontId::proportional(qsize * 0.8), Color32::from_gray(170));
+        return;
+    }
+    let palette = [
+        Color32::from_rgb(0x8f, 0xc1, 0xff),
+        Color32::from_rgb(0xff, 0xd1, 0x66),
+        Color32::from_rgb(0x8a, 0xe2, 0xb0),
+        Color32::from_rgb(0xff, 0x9d, 0xb5),
+        Color32::from_rgb(0xc9, 0xa7, 0xff),
+        Color32::WHITE,
+    ];
+    let top = words[0].1.max(1) as f32;
+    // Shrink everything until the rows fit the area.
+    let mut scale = 1.0f32;
+    for _ in 0..14 {
+        let mut rows: Vec<(f32, f32)> = vec![(0.0, 0.0)];
+        let mut fits = true;
+        for (w, n) in words.iter().take(60) {
+            let size = (qsize * 0.7 + qsize * 1.6 * (*n as f32 / top)) * scale;
+            let g = painter.layout_no_wrap(w.clone(), FontId::proportional(size), Color32::WHITE);
+            let (wid, hgt) = (g.size().x + size * 0.6, g.size().y);
+            match rows.last_mut() {
+                Some(last) if !(last.0 + wid > area.width() && last.0 > 0.0) => {
+                    last.0 += wid;
+                    last.1 = last.1.max(hgt);
+                }
+                _ => rows.push((wid, hgt)),
+            }
+            if wid > area.width() {
+                fits = false;
+            }
+        }
+        let total: f32 = rows.iter().map(|r| r.1).sum();
+        if fits && total <= area.height() {
+            break;
+        }
+        scale *= 0.85;
+    }
+    // Lay out and draw.
+    let mut rows: Vec<Vec<(Arc<egui::Galley>, Color32)>> = vec![vec![]];
+    let mut row_w = 0.0f32;
+    let mut row_ws: Vec<f32> = vec![0.0];
+    for (i, (w, n)) in words.iter().take(60).enumerate() {
+        let size = (qsize * 0.7 + qsize * 1.6 * (*n as f32 / top)) * scale;
+        let col = palette[i % palette.len()];
+        let g = painter.layout_no_wrap(w.clone(), FontId::proportional(size), col);
+        let wid = g.size().x + size * 0.6;
+        if row_w + wid > area.width() && row_w > 0.0 {
+            rows.push(vec![]);
+            row_ws.push(0.0);
+            row_w = 0.0;
+        }
+        row_w += wid;
+        if let Some(rw) = row_ws.last_mut() {
+            *rw = row_w;
+        }
+        if let Some(row) = rows.last_mut() {
+            row.push((g, col));
+        }
+    }
+    let heights: Vec<f32> = rows.iter().map(|r| r.iter().map(|(g, _)| g.size().y).fold(0.0, f32::max)).collect();
+    let total: f32 = heights.iter().sum();
+    let mut y = area.center().y - total / 2.0;
+    for (r, row) in rows.into_iter().enumerate() {
+        let mut x = area.center().x - row_ws[r] / 2.0;
+        for (g, col) in row {
+            let gy = y + (heights[r] - g.size().y) / 2.0;
+            let size = g.size();
+            let gap = size.y * 0.3;
+            if gy + size.y <= area.max.y + 1.0 && gy >= area.min.y - 1.0 {
+                painter.galley(pos2(x + gap, gy), g, col);
+            }
+            x += size.x + gap * 2.0;
+        }
+        y += heights[r];
+    }
+}
+
+fn draw_choice(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role) {
     let counts = poll::tally(c.options.len(), votes);
     let total: u32 = counts.iter().sum();
     let pct = poll::percentages(&counts);
@@ -1081,7 +1298,44 @@ pub(crate) fn presenter_rows(
                         ext.fire(show_zoom, it, now, ui.ctx());
                     }
                 }
-                (TypeState::Poll { open, revealed, votes }, Config::Poll(c)) => {
+                (TypeState::Poll { open, revealed, votes, texts, ranks, hidden }, Config::Poll(c)) if c.kind != PollKind::Choice => {
+                    let n = poll::answered(votes, texts, ranks);
+                    if !*revealed && row_button(ui, if *open { "Close answers" } else { "Open answers" }, *open).clicked() {
+                        ext.fire(show_zoom, it, now, ui.ctx());
+                    }
+                    if !*revealed
+                        && n > 0
+                        && row_button(ui, "Show results", false).clicked()
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
+                    {
+                        *open = false;
+                        *revealed = true;
+                        ext.changed_at = now;
+                    }
+                    dim(ui, &format!("{} · {n} answer{}", c.kind.label(), if n == 1 { "" } else { "s" }));
+                    if c.kind == PollKind::FreeText {
+                        let list: Vec<(String, String)> = texts.iter().filter_map(|(id, t)| t.first().map(|a| (id.clone(), a.clone()))).collect();
+                        let hidden_now = hidden.clone();
+                        for (pid, a) in list.iter().rev().take(8) {
+                            let off = hidden_now.contains(pid);
+                            let short: String = a.chars().take(48).collect();
+                            if row_button(ui, &format!("{}{short}", if off { "Hidden: " } else { "" }), off)
+                                .on_hover_text("Click to hide it from the screen, or bring it back")
+                                .clicked()
+                                && let Some(ObjectState { st: TypeState::Poll { hidden, .. }, .. }) = ext.states.get_mut(&it.id)
+                            {
+                                if !hidden.remove(pid) {
+                                    hidden.insert(pid.clone());
+                                }
+                                ext.changed_at = now;
+                            }
+                        }
+                    }
+                    if row_button(ui, "Reset", false).clicked() {
+                        ext.reset(it, show_zoom);
+                    }
+                }
+                (TypeState::Poll { open, revealed, votes, .. }, Config::Poll(c)) => {
                     let counts = poll::tally(c.options.len(), votes);
                     if !*revealed && row_button(ui, if *open { "Close voting" } else { "Open voting" }, *open).clicked() {
                         ext.fire(show_zoom, it, now, ui.ctx());
@@ -1499,7 +1753,16 @@ pub fn presenter_phones(ui: &mut Ui, show: &mut Show, rect: Rect) -> f32 {
     if !show.presenter || show.reading {
         return 0.0;
     }
-    super::phones::section(ui, &mut show.ext, rect) + 8.0
+    let h = super::phones::section(ui, &mut show.ext, rect) + 8.0;
+    // deckrt: questions from the phones, under the Phones section.
+    let Some(ph) = show.ext.phones.as_mut().filter(|p| p.running()) else { return h };
+    let qrect = Rect::from_min_max(pos2(rect.min.x, rect.min.y + h), rect.max);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(qrect));
+    dark_widgets(&mut child);
+    if super::questions::section(&mut child, &mut ph.questions) {
+        ph.changed();
+    }
+    h + child.min_rect().height() + 8.0
 }
 
 #[cfg(test)]

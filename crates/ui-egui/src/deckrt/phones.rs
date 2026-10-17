@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
-use deckcraft_interactive::object::Config;
+use deckcraft_interactive::object::{Config, PollKind};
 use deckcraft_interactive::poll;
 use deckcraft_interactive::state::{ObjectState, TypeState};
 use deckcraft_model::Presentation;
@@ -144,6 +144,10 @@ pub struct Phones {
     live_current: Option<(usize, u32)>,
     /// Latency samples: phone's `at` to applied, milliseconds.
     pub inputs: Vec<f64>,
+    /// Questions from the phones, for the whole show.
+    pub questions: super::questions::Questions,
+    /// Slides shown so far (1-based), which phones may look back at.
+    seen: BTreeSet<u32>,
 }
 
 impl Phones {
@@ -197,6 +201,8 @@ impl Phones {
             live_rx: None,
             live_current: None,
             inputs: vec![],
+            questions: Default::default(),
+            seen: BTreeSet::new(),
         }
     }
 
@@ -317,6 +323,9 @@ impl Phones {
                 self.last_show.clear();
             }
         }
+        if !blackout && self.seen.insert(idx as u32 + 1) {
+            self.last_show.clear();
+        }
         let Some(server) = self.server.as_mut() else { return redraw };
         let inbound = server.poll();
         let models: Vec<Item> = objects_on(doc, idx)
@@ -361,10 +370,15 @@ impl Phones {
                             continue;
                         }
                         let Config::Poll(c) = &p.obj.config else { continue };
-                        if (option as usize) >= c.options.len() {
+                        let limit = match c.kind {
+                            PollKind::Choice => c.options.len(),
+                            PollKind::Rating => c.scale.clamp(2, 10) as usize,
+                            _ => 0,
+                        };
+                        if (option as usize) >= limit {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes }, .. }) = ext_states.get_mut(&p.id) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes, .. }, .. }) = ext_states.get_mut(&p.id) {
                             votes.insert(id.clone(), option as usize);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -455,6 +469,66 @@ impl Phones {
                         }
                         self.note_input(at);
                     }
+                    PhoneMessage::Text { poll: poll_id, text } => {
+                        let Some(p) = &poll_item else { continue };
+                        let Config::Poll(c) = &p.obj.config else { continue };
+                        if p.id.to_string() != poll_id {
+                            continue;
+                        }
+                        let words = match c.kind {
+                            PollKind::WordCloud => poll::cloud_words(&text),
+                            PollKind::FreeText => vec![poll::clean_text(&text)].into_iter().filter(|t| !t.is_empty()).collect(),
+                            _ => continue,
+                        };
+                        if words.is_empty() {
+                            continue;
+                        }
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, texts, .. }, .. }) = ext_states.get_mut(&p.id) {
+                            texts.insert(id.clone(), words);
+                            *changed_at = now;
+                            self.results_due = Some(now + 1.5);
+                            tell_you.push(id);
+                        }
+                    }
+                    PhoneMessage::Rank { poll: poll_id, order } => {
+                        let Some(p) = &poll_item else { continue };
+                        let Config::Poll(c) = &p.obj.config else { continue };
+                        if p.id.to_string() != poll_id || c.kind != PollKind::Ranking {
+                            continue;
+                        }
+                        let mut seen_o = BTreeSet::new();
+                        let order: Vec<usize> = order.into_iter().map(|o| o as usize).filter(|o| *o < c.options.len() && seen_o.insert(*o)).collect();
+                        if order.is_empty() {
+                            continue;
+                        }
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, ranks, .. }, .. }) = ext_states.get_mut(&p.id) {
+                            ranks.insert(id.clone(), order);
+                            *changed_at = now;
+                            self.results_due = Some(now + 1.5);
+                            tell_you.push(id);
+                        }
+                    }
+                    PhoneMessage::Ask { text, anon } => {
+                        let name = self.names.get(&id).cloned();
+                        if self.questions.ask(&id, name, &text, anon, now) {
+                            self.results_due = Some(now + 1.5);
+                            self.last_show.clear();
+                            tell_you.push(id);
+                        } else if let Some(s) = &self.server {
+                            let why = if self.questions.closed {
+                                "The presenter isn't taking questions right now."
+                            } else {
+                                "That question wasn't added. You may have five waiting at once."
+                            };
+                            s.send(&id, &json!({"t": "error", "code": "ask", "text": why}));
+                        }
+                    }
+                    PhoneMessage::Upvote { q, on } => {
+                        if self.questions.vote(&id, &q, on) {
+                            self.last_show.clear();
+                            tell_you.push(id);
+                        }
+                    }
                     PhoneMessage::Join { .. } | PhoneMessage::Ping { .. } => {}
                 },
             }
@@ -529,7 +603,21 @@ impl Phones {
                 Some(ObjectState { visible, st: TypeState::Poll { open, revealed, .. } }) => (*open && *visible, *revealed && c.reveal_correct),
                 _ => (false, false),
             };
-            Some(json!({"id": p.id.to_string(), "question": c.question, "options": c.options, "open": open, "revealed": revealed, "correct": if revealed { c.correct } else { None }}))
+            let answered = match states.get(&p.id) {
+                Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, .. }, .. }) => poll::answered(votes, texts, ranks),
+                _ => 0,
+            };
+            Some(json!({
+                "id": p.id.to_string(),
+                "kind": c.kind.id(),
+                "scale": c.scale.clamp(2, 10),
+                "question": c.question,
+                "options": if c.kind.has_options() { c.options.clone() } else { vec![] },
+                "open": open,
+                "revealed": revealed,
+                "correct": if revealed && c.kind == PollKind::Choice { c.correct } else { None },
+                "answered": answered,
+            }))
         });
         let has_model = !models.is_empty();
         let slide = idx + 1;
@@ -564,19 +652,21 @@ impl Phones {
             "interactive": !why.is_empty(),
             "why": why,
             "aspect": doc.slide_size.width / doc.slide_size.height.max(1.0),
+            "seen": self.seen.iter().copied().filter(|n| self.slides_ready.is_some_and(|r| *n <= r)).collect::<Vec<_>>(),
+            "questions": self.questions.for_phones(),
+            "questions_open": !self.questions.closed,
         })
     }
 
     fn you_message(&self, states: &BTreeMap<u32, ObjectState>, id: &str, poll_item: Option<&Item>, models: &[Item]) -> Value {
-        let (poll_id, vote) = match poll_item {
-            Some(p) => {
-                let v = match states.get(&p.id) {
-                    Some(ObjectState { st: TypeState::Poll { votes, .. }, .. }) => votes.get(id).copied(),
-                    _ => None,
-                };
-                (Some(p.id.to_string()), v)
-            }
-            None => (None, None),
+        let (poll_id, vote, text, rank) = match poll_item {
+            Some(p) => match states.get(&p.id) {
+                Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, .. }, .. }) => {
+                    (Some(p.id.to_string()), votes.get(id).copied(), texts.get(id).map(|t| t.join(", ")), ranks.get(id).cloned())
+                }
+                _ => (Some(p.id.to_string()), None, None, None),
+            },
+            None => (None, None, None, None),
         };
         let (control, position) = self.queue.standing(id);
         let target = if models.is_empty() {
@@ -588,7 +678,7 @@ impl Phones {
             self.targets.get(id).filter(|t| models.iter().any(|m| &m.id.to_string() == *t)).cloned().unwrap_or_else(|| models[0].id.to_string())
         };
         let n = self.roster.iter().position(|r| r.id == id).unwrap_or(0);
-        json!({"t": "you", "poll": poll_id, "vote": vote, "control": control, "position": position, "color": PHONE_COLORS[n % PHONE_COLORS.len()], "target": target})
+        json!({"t": "you", "poll": poll_id, "vote": vote, "text": text, "rank": rank, "questions": self.questions.for_phone(id), "control": control, "position": position, "color": PHONE_COLORS[n % PHONE_COLORS.len()], "target": target})
     }
 
     pub fn grant(&mut self, id: &str) {
@@ -633,6 +723,12 @@ impl Phones {
     }
 
     /// Everyone hears their standing again after the queue moved; `logic` sends it.
+    /// Something every phone sees changed outside a message (the presenter's Questions buttons).
+    pub fn changed(&mut self) {
+        self.last_show.clear();
+        self.tell_all();
+    }
+
     fn tell_all(&mut self) {
         // Forcing the show message out again makes `logic` send every `you`.
         self.last_show.clear();
@@ -658,29 +754,56 @@ impl Phones {
         for (i, _) in doc.slides.iter().enumerate() {
             for it in objects_on(doc, i) {
                 let Config::Poll(c) = &it.obj.config else { continue };
-                let (votes, revealed) = match states.get(&it.id) {
-                    Some(ObjectState { st: TypeState::Poll { votes, revealed, .. }, .. }) => (votes.clone(), *revealed),
-                    _ => (BTreeMap::new(), false),
+                let (votes, texts, ranks, hidden, revealed) = match states.get(&it.id) {
+                    Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, hidden, revealed, .. }, .. }) => {
+                        (votes.clone(), texts.clone(), ranks.clone(), hidden.clone(), *revealed)
+                    }
+                    _ => Default::default(),
+                };
+                let (counts, answers, average, order) = match c.kind {
+                    PollKind::Choice => (poll::tally(c.options.len(), &votes), vec![], None, vec![]),
+                    PollKind::Rating => {
+                        let (counts, avg) = poll::rating(c.scale, &votes);
+                        (counts, vec![], avg, vec![])
+                    }
+                    PollKind::WordCloud => (vec![], poll::cloud(&texts).into_iter().map(|(w, n)| format!("{w} ({n})")).collect(), None, vec![]),
+                    PollKind::FreeText => (vec![], poll::answers(&texts, &hidden).into_iter().map(|(_, a)| a.to_string()).collect(), None, vec![]),
+                    PollKind::Ranking => (
+                        vec![],
+                        vec![],
+                        None,
+                        poll::ranking(c.options.len(), &ranks).into_iter().map(|(o, _)| c.options.get(o).cloned().unwrap_or_default()).collect(),
+                    ),
                 };
                 polls.push(results::PollResult {
                     id: it.id.to_string(),
                     question: c.question.clone(),
                     options: c.options.clone(),
-                    counts: poll::tally(c.options.len(), &votes),
+                    counts,
                     correct: c.correct,
-                    voters: votes.len() as u32,
+                    voters: poll::answered(&votes, &texts, &ranks) as u32,
                     revealed,
+                    kind: c.kind.id().to_string(),
+                    answers,
+                    average,
+                    order,
                 });
             }
         }
-        results::ShowResults { deck: String::new(), written_at: String::new(), phones: self.ever_joined.len() as u32, polls }
+        results::ShowResults {
+            deck: String::new(),
+            written_at: String::new(),
+            phones: self.ever_joined.len() as u32,
+            polls,
+            questions: self.questions.report(),
+        }
     }
 
     /// `<deck>.results.json` next to the deck, when the deck has a poll and a file.
     pub fn write_results(&mut self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation) {
         let Some(deck) = &self.deck_path else { return };
         let r = self.results(states, doc);
-        if r.polls.is_empty() {
+        if r.polls.is_empty() && r.questions.is_empty() {
             return;
         }
         match results::write_results(deck, r) {

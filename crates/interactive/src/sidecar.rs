@@ -446,6 +446,7 @@ pub fn convert(o: &OldObject, dir: &Path, load: &mut dyn FnMut(&Path) -> Option<
                     correct: c.get("correct").and_then(|v| v.as_u64()).map(|v| v as usize),
                     reveal_correct: c.get("reveal_correct").and_then(|v| v.as_bool()).unwrap_or(true),
                     targets,
+                    ..Default::default()
                 }),
                 None,
             )

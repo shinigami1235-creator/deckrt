@@ -265,10 +265,17 @@ pub fn sync_fallback(sh: &mut Shape, o: &InteractiveObject) {
             sh.fill = Some(deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::rgb(deckcraft_color::Rgba::rgb(0x1e, 0x29, 0x3b)) });
             sh.line = Some(deckcraft_model::Line::default());
             let mut text = c.question.clone();
-            for (i, opt) in c.options.iter().enumerate() {
-                let letter = (b'A' + (i % 26) as u8) as char;
-                text.push('\n');
-                text.push_str(&format!("{letter}.  {opt}"));
+            match c.kind {
+                obj::PollKind::Choice | obj::PollKind::Ranking => {
+                    for (i, opt) in c.options.iter().enumerate() {
+                        let mark = if c.kind == obj::PollKind::Ranking { format!("{}.", i + 1) } else { format!("{}.", (b'A' + (i % 26) as u8) as char) };
+                        text.push('\n');
+                        text.push_str(&format!("{mark}  {opt}"));
+                    }
+                }
+                obj::PollKind::Rating => text.push_str(&format!("\nRate from 1 to {}", c.scale.clamp(2, 10))),
+                obj::PollKind::WordCloud => text.push_str("\nAnswer with up to three words"),
+                obj::PollKind::FreeText => text.push_str("\nAnswer in a few words"),
             }
             let mut t = TextBody::from_text(&text);
             let white = deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::rgb(deckcraft_color::Rgba::rgb(0xff, 0xff, 0xff)) };

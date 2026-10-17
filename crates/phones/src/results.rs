@@ -21,6 +21,22 @@ pub struct PollResult {
     /// Whether the presenter revealed the answer during the show.
     #[serde(default)]
     pub revealed: bool,
+    /// `choice`, `word_cloud`, `free_text`, `rating` or `ranking`.
+    #[serde(default = "choice")]
+    pub kind: String,
+    /// Typed answers: each word of a word cloud with its count, or each free-text answer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answers: Vec<String>,
+    /// A rating's average.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub average: Option<f64>,
+    /// A ranking's answers in the room's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<String>,
+}
+
+fn choice() -> String {
+    "choice".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +47,9 @@ pub struct ShowResults {
     /// Phones that joined at any point.
     pub phones: u32,
     pub polls: Vec<PollResult>,
+    /// The questions phones asked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<serde_json::Value>,
 }
 
 /// `deck.pptx` becomes `deck.results.json` in the same directory.
@@ -96,7 +115,12 @@ mod tests {
                 correct: Some(1),
                 voters: 3,
                 revealed: true,
+                kind: "choice".into(),
+                answers: vec![],
+                average: None,
+                order: vec![],
             }],
+            questions: vec![],
         };
         let path = write_results(&deck, r).unwrap();
         assert_eq!(path, dir.path().join("my deck.results.json"));
@@ -105,7 +129,7 @@ mod tests {
         assert!(back.written_at.ends_with('Z'));
         assert_eq!(back.polls[0].counts, vec![2, 1]);
         // A second write replaces the first.
-        let r2 = ShowResults { deck: String::new(), written_at: String::new(), phones: 0, polls: vec![] };
+        let r2 = ShowResults { deck: String::new(), written_at: String::new(), phones: 0, polls: vec![], questions: vec![] };
         write_results(&deck, r2).unwrap();
         let back: ShowResults = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(back.polls.is_empty());
