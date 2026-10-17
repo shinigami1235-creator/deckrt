@@ -55,6 +55,7 @@ pub struct Done {
     open: Option<usize>,
     saved: Option<String>,
     kept: bool,
+    noted: bool,
 }
 
 fn model_ready(app: &mut SlideApp) -> bool {
@@ -256,7 +257,7 @@ pub fn pace_line(doc: &deckcraft_model::Presentation, slide: usize, on_slide: f6
 pub fn end_show(app: &mut SlideApp, show: &mut Show) {
     if let Some(mut live) = show.ext.coach.take() {
         live.close();
-        app.deckrt.coach = Some(Done { live, ended: None, report: None, open: None, saved: None, kept: false });
+        app.deckrt.coach = Some(Done { live, ended: None, report: None, open: None, saved: None, kept: false, noted: false });
         app.dialog = Some(crate::dialogs::Dialog::new(DIALOG));
     }
 }
@@ -322,6 +323,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
     let mut close = false;
     let mut keep = false;
     let mut save = false;
+    let mut note = false;
     ui.horizontal(|ui| {
         let label = if done.kept { "Pace kept" } else { "Keep this pace" };
         if ui
@@ -333,6 +335,14 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         }
         if ui.add(super::check::framed(ui, "Save report", 0.0)).on_hover_text("A text file next to the deck").clicked() {
             save = true;
+        }
+        let label = if done.noted { "Added to notes" } else { "Add to notes" };
+        if ui
+            .add_enabled(!done.noted && report.slides.iter().any(|s| !s.said.is_empty()), super::check::framed(ui, label, 0.0))
+            .on_hover_text("What you said on each slide goes after its speaker notes")
+            .clicked()
+        {
+            note = true;
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.add(super::check::framed(ui, "Close", 72.0)).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -348,6 +358,21 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
                     d.kept = true;
                 }
                 app.set_status("Pace kept. Save the deck to keep it for the talk.");
+            }
+            Err(e) => app.set_status(e.to_string()),
+        }
+        app.drain_requests();
+    }
+    if note {
+        let slides: Vec<serde_json::Value> =
+            report.slides.iter().filter(|r| !r.said.is_empty()).map(|r| json!({"index": r.slide, "text": r.said.join(" ")})).collect();
+        match app.session.execute("deckrt.addNotes", &json!({"slides": slides})) {
+            Ok(r) => {
+                if let Some(d) = app.deckrt.coach.as_mut() {
+                    d.noted = true;
+                }
+                let n = r["slides"].as_u64().unwrap_or(0);
+                app.set_status(if n == 1 { "Added to the notes of 1 slide.".to_string() } else { format!("Added to the notes of {n} slides.") });
             }
             Err(e) => app.set_status(e.to_string()),
         }

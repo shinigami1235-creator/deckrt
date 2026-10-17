@@ -803,6 +803,8 @@ fn media(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape, m: &deckcraft_
     if let Some(l) = &link {
         w.empty(tag, A::new().a("r:link", l));
     }
+    // deckrt hook: a clip's tags (recorded narration's mark) travel in its nvPr like a picture's.
+    super::cust_data(w, x, o, &s.tags);
     if let Some(e) = &embed {
         w.open0("p:extLst");
         w.open("p:ext", A::new().a("uri", "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}"));

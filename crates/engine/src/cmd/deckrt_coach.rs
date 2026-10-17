@@ -12,15 +12,61 @@ use crate::{Result, Session};
 pub const PACE_TAG: &str = "DECKRT.PACE";
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(
-        "deckrt.keepPace",
-        "Keep Rehearsal Pace",
-        [],
-        None,
-        "{slides: [{index, secs}]} → {slides}; slides not listed lose any pace they had",
-        has_doc,
-        keep_pace
-    )]
+    vec![
+        cmd!(
+            "deckrt.keepPace",
+            "Keep Rehearsal Pace",
+            [],
+            None,
+            "{slides: [{index, secs}]} → {slides}; slides not listed lose any pace they had",
+            has_doc,
+            keep_pace
+        ),
+        cmd!(
+            "deckrt.addNotes",
+            "Add to Speaker Notes",
+            [],
+            None,
+            "{slides: [{index, text}]} → {slides}; each text goes after the slide's notes, a blank line between",
+            has_doc,
+            add_notes
+        ),
+    ]
+}
+
+fn add_notes(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "deckrt.addNotes";
+    let list = p.get("slides").and_then(Value::as_array).ok_or_else(|| bad(cmd, "missing `slides`"))?;
+    let n_slides = s.doc()?.doc.slides.len();
+    let mut items = vec![];
+    for item in list {
+        let i = item.get("index").and_then(Value::as_u64).ok_or_else(|| bad(cmd, "each slide needs an `index`"))? as usize;
+        if i >= n_slides {
+            return Err(bad(cmd, "no such slide"));
+        }
+        let text = item.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if !text.is_empty() {
+            items.push((i, text));
+        }
+    }
+    let n = items.len();
+    s.edit(|doc, _| {
+        for (i, text) in items {
+            let Some(sl) = doc.slides.get_mut(i) else { continue };
+            let notes = &mut Arc::make_mut(sl).notes;
+            let empty = notes.text().trim().is_empty();
+            if empty {
+                notes.paragraphs.clear();
+            } else {
+                notes.paragraphs.push(deckcraft_model::text::Paragraph::new(""));
+            }
+            for line in text.split('\n') {
+                notes.paragraphs.push(deckcraft_model::text::Paragraph::new(line));
+            }
+        }
+        Ok(())
+    })?;
+    Ok(json!({"slides": n}))
 }
 
 /// The seconds a slide took in the kept rehearsal.
@@ -75,5 +121,16 @@ mod tests {
         s.execute("edit.undo", &json!({})).expect("undo");
         assert_eq!(paces(&s), vec![Some(61.2), None, Some(30.0)]);
         assert!(s.execute("deckrt.keepPace", &json!({"slides": [{"index": 9, "secs": 1}]})).is_err());
+    }
+
+    #[test]
+    fn notes_are_added_after_what_was_there() {
+        let mut s = Session::with_new();
+        s.execute("slide.new", &json!({"layout": "blank"})).expect("slide");
+        s.execute("deckrt.addNotes", &json!({"slides": [{"index": 0, "text": "Fibroblasts make collagen."}]})).expect("add");
+        s.execute("deckrt.addNotes", &json!({"slides": [{"index": 0, "text": "Type I and III."}, {"index": 1, "text": "  "}]})).expect("add");
+        let doc = &s.doc().expect("doc").doc;
+        assert_eq!(doc.slides[0].notes.text(), "Fibroblasts make collagen.\n\nType I and III.");
+        assert_eq!(doc.slides[1].notes.text().trim(), "");
     }
 }

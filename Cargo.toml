@@ -43,6 +43,7 @@ deckcraft-model3d = { path = "crates/model3d" }
 deckcraft-phones = { path = "crates/phones" }
 deckcraft-captions = { path = "crates/captions" }
 deckcraft-show-ext = { path = "crates/show-ext" }
+deckcraft-video-out = { path = "crates/video-out" }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }

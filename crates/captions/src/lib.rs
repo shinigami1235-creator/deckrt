@@ -292,10 +292,15 @@ impl Cutter {
 
 /// Mono samples at `rate` to 16 kHz, linearly.
 pub fn resample(samples: &[f32], rate: u32) -> Vec<f32> {
-    if rate as usize == RATE || samples.is_empty() {
+    resample_to(samples, rate, RATE as u32)
+}
+
+/// Mono samples from one rate to another, linearly.
+pub fn resample_to(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to || samples.is_empty() || from == 0 || to == 0 {
         return samples.to_vec();
     }
-    let ratio = rate as f64 / RATE as f64;
+    let ratio = from as f64 / to as f64;
     let n = (samples.len() as f64 / ratio).floor() as usize;
     (0..n)
         .map(|i| {
@@ -309,12 +314,39 @@ pub fn resample(samples: &[f32], rate: u32) -> Vec<f32> {
         .collect()
 }
 
+/// Mono samples as a 16-bit PCM WAV file.
+pub fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + samples.len() * 2);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        let v = (s.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
 pub mod coach;
 
 #[cfg(feature = "engine")]
 mod engine;
 #[cfg(feature = "engine")]
+mod recorder;
+#[cfg(feature = "engine")]
 pub use engine::{Captioner, Event};
+#[cfg(feature = "engine")]
+pub use recorder::Recorder;
 
 #[cfg(test)]
 mod tests {
@@ -357,5 +389,10 @@ mod tests {
         let p = prompt_from(&["Dermis, fibroblast and extracellular matrix".into(), "Fibroblast collagen".into()]);
         assert_eq!(p, "Dermis, fibroblast, extracellular, matrix, collagen");
         assert_eq!(resample(&[0.0, 1.0, 0.0, 1.0], 32_000).len(), 2);
+        let w = wav(&[0.0, 1.0, -1.0], 22_050);
+        assert_eq!(&w[..4], b"RIFF");
+        assert_eq!(w.len(), 44 + 6);
+        assert_eq!(&w[44..46], &0i16.to_le_bytes());
+        assert_eq!(&w[46..48], &32767i16.to_le_bytes());
     }
 }

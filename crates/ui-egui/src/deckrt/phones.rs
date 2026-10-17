@@ -150,6 +150,8 @@ pub struct Phones {
     seen: BTreeSet<u32>,
     /// The live caption phones show.
     caption: Option<String>,
+    /// Reactions and the feedback form.
+    pub crowd: super::crowd::Crowd,
 }
 
 impl Phones {
@@ -206,6 +208,7 @@ impl Phones {
             questions: Default::default(),
             seen: BTreeSet::new(),
             caption: None,
+            crowd: Default::default(),
         }
     }
 
@@ -258,14 +261,14 @@ impl Phones {
                 std::fs::create_dir_all(&out).map_err(|e| format!("cannot make {}: {e}", out.display()))?;
                 let h = (PHONE_WIDTH as f64 * doc.slide_size.height / doc.slide_size.width.max(1.0)).round().clamp(1.0, 4096.0) as u32;
                 for i in 0..doc.slides.len() {
-                    let skip = super::show::hidden_in_show(&doc, i);
+                    // Objects drawn as the file shows them (a poll's question and answers),
+                    // since these pictures are what phones look back at and print.
                     let img = deckcraft_render::render_slide(
                         &doc,
                         i,
                         &deckcraft_render::RenderOpts {
                             scale: PHONE_WIDTH as f64 / doc.slide_size.width.max(1.0),
                             size: Some((PHONE_WIDTH, h)),
-                            skip: &skip,
                             ..Default::default()
                         },
                     );
@@ -295,7 +298,7 @@ impl Phones {
         now: f64,
         blackout: bool,
     ) -> bool {
-        let mut redraw = false;
+        let mut redraw = self.crowd.tick(now);
         // The slide pictures.
         if let Some(job) = &self.slides
             && let Ok(r) = job.rx.try_recv()
@@ -532,6 +535,21 @@ impl Phones {
                             tell_you.push(id);
                         }
                     }
+                    PhoneMessage::React { kind } => {
+                        if self.crowd.react(&id, &kind, idx, now) {
+                            redraw = true;
+                            self.results_due = Some(now + 3.0);
+                        }
+                    }
+                    PhoneMessage::Feedback { rating, useful, better, anon } => {
+                        if self.crowd.feedback_open {
+                            let name = if anon { None } else { self.names.get(&id).cloned() };
+                            let clean = |t: &str| deckcraft_interactive::poll::clean_text(t);
+                            self.crowd.answer(&id, super::crowd::Answer { name, rating, useful: clean(&useful), better: clean(&better) });
+                            self.results_due = Some(now + 1.5);
+                            tell_you.push(id);
+                        }
+                    }
                     PhoneMessage::Join { .. } | PhoneMessage::Ping { .. } => {}
                 },
             }
@@ -659,6 +677,9 @@ impl Phones {
             "questions": self.questions.for_phones(),
             "questions_open": !self.questions.closed,
             "caption": self.caption,
+            "feedback": self.crowd.feedback_open,
+            "title": self.deck_path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().to_string()),
+            "reactions": self.crowd.reactions_on,
         })
     }
 
@@ -682,7 +703,7 @@ impl Phones {
             self.targets.get(id).filter(|t| models.iter().any(|m| &m.id.to_string() == *t)).cloned().unwrap_or_else(|| models[0].id.to_string())
         };
         let n = self.roster.iter().position(|r| r.id == id).unwrap_or(0);
-        json!({"t": "you", "poll": poll_id, "vote": vote, "text": text, "rank": rank, "questions": self.questions.for_phone(id), "control": control, "position": position, "color": PHONE_COLORS[n % PHONE_COLORS.len()], "target": target})
+        json!({"t": "you", "poll": poll_id, "vote": vote, "text": text, "rank": rank, "questions": self.questions.for_phone(id), "control": control, "position": position, "color": PHONE_COLORS[n % PHONE_COLORS.len()], "target": target, "feedback_sent": self.crowd.answers.contains_key(id)})
     }
 
     pub fn grant(&mut self, id: &str) {
@@ -805,6 +826,8 @@ impl Phones {
             phones: self.ever_joined.len() as u32,
             polls,
             questions: self.questions.report(),
+            feedback: self.crowd.feedback_report(),
+            reactions: self.crowd.reactions_report(),
         }
     }
 
@@ -812,7 +835,7 @@ impl Phones {
     pub fn write_results(&mut self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation) {
         let Some(deck) = &self.deck_path else { return };
         let r = self.results(states, doc);
-        if r.polls.is_empty() && r.questions.is_empty() {
+        if r.polls.is_empty() && r.questions.is_empty() && r.feedback.is_none() && r.reactions.is_empty() {
             return;
         }
         match results::write_results(deck, r) {

@@ -1,0 +1,35 @@
+# Builds and tests the video export crate alone on Windows, where Media Foundation is.
+# Runs on pushes to wip/video-check, so the encoder can be checked without the full build.
+
+name: Video export check
+
+on:
+  push:
+    branches: [wip/video-check]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test the video export
+        shell: pwsh
+        run: |
+          cargo test --release -p deckcraft-video-out -- --nocapture 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) {
+            $lines = @(Get-Content test.log)
+            $found = 0
+            for ($i = 0; $i -lt $lines.Count -and $found -lt 12; $i++) {
+              if ($lines[$i] -match '^(error|---- .* stdout ----|thread .* panicked|test result: FAILED)') {
+                $end = [Math]::Min($i + 10, $lines.Count - 1)
+                $text = (($lines[$i..$end] | ForEach-Object { $_.Trim() }) -join ' | ')
+                Write-Output "::error::$text"
+                $found++
+              }
+            }
+            exit 1
+          }

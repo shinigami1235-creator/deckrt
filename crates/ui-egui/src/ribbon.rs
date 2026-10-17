@@ -2082,8 +2082,7 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
             }
         }
         crate::deckrt::coach::ribbon_button(app, ui); // deckrt hook
-        let r = big_button(ui, Icon::Record, "Record", false);
-        let _ = r.on_hover_text("Recording narration needs audio capture (coming soon)");
+        crate::deckrt::record::slide_show_button(app, ui); // deckrt hook
     });
     group(ui, |ui| {
         rows(ui, |ui| {
@@ -2104,6 +2103,11 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
 }
 
 fn record(app: &mut SlideApp, ui: &mut Ui) {
+    // deckrt hook: deckrt's Record tab records narration.
+    if cfg!(not(target_arch = "wasm32")) {
+        crate::deckrt::record::ribbon(app, ui);
+        return;
+    }
     group(ui, |ui| {
         let r = big_button(ui, Icon::Cameo, "Cameo", false);
         let _ = r.on_hover_text("Camera capture is not available yet");

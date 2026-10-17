@@ -5,7 +5,10 @@
 pub mod canvas;
 pub mod captions;
 pub mod coach;
+pub mod crowd;
 pub mod finder;
+pub mod record;
+pub mod video;
 pub mod check;
 #[cfg(feature = "gpu3d")]
 pub mod gpu;
@@ -81,6 +84,8 @@ pub struct State {
     pub coach: Option<coach::Done>,
     /// Find a Slide: the index of the decks in the chosen folders, and the search.
     pub finder: finder::Finder,
+    /// Export to Video: the choices and an export running.
+    pub video: video::Video,
     /// The per-user settings folder (the desktop app fills this in): the speech model lives here.
     pub settings_dir: Option<std::path::PathBuf>,
     /// The deck revision the check before showing last passed (or was waved through) at.
@@ -121,6 +126,7 @@ pub fn icon(kind: Kind) -> Icon {
 /// Once a frame, before the UI: the object pane follows the selection, and the model turn
 /// state is dropped for shapes that are gone.
 pub fn logic(app: &mut SlideApp) {
+    video::poll(app);
     let Some(st) = app.session.active() else { return };
     let selected = st.selected_shapes().first().map(|s| (s.id.0, obj::is_live(s)));
     match selected {
@@ -301,6 +307,7 @@ pub fn dialog_title(id: &str) -> &'static str {
         captions::DIALOG => captions::title(),
         coach::DIALOG => coach::title(),
         finder::DIALOG => finder::title(),
+        video::DIALOG => video::title(),
         privacy::DIALOG => "Check before sharing",
         _ => "deckrt",
     }
@@ -313,6 +320,7 @@ pub fn dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -
         captions::DIALOG => captions::body(app, ui),
         coach::DIALOG => coach::body(app, ui),
         finder::DIALOG => finder::body(app, ui),
+        video::DIALOG => video::body(app, ui),
         privacy::DIALOG => check::body(app, ui, d),
         "deckrt.imported" => {
             let text = d.params.get("text").and_then(Value::as_str).unwrap_or("").to_string();

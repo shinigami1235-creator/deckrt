@@ -50,6 +50,23 @@ pub struct ShowResults {
     /// The questions phones asked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub questions: Vec<serde_json::Value>,
+    /// The feedback form's answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<Feedback>,
+    /// Reactions sent on each slide: `{"slide": 3, "heart": 12, "lost": 2}`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Feedback {
+    pub answers: u32,
+    /// The ratings' average, when any phone gave one.
+    pub average: Option<f64>,
+    /// How many gave each rating, 1 to 5.
+    pub ratings: [u32; 5],
+    /// `{"name", "rating", "useful", "better"}` for each phone that answered.
+    pub comments: Vec<serde_json::Value>,
 }
 
 /// `deck.pptx` becomes `deck.results.json` in the same directory.
@@ -121,6 +138,8 @@ mod tests {
                 order: vec![],
             }],
             questions: vec![],
+            feedback: None,
+            reactions: vec![],
         };
         let path = write_results(&deck, r).unwrap();
         assert_eq!(path, dir.path().join("my deck.results.json"));
@@ -129,7 +148,7 @@ mod tests {
         assert!(back.written_at.ends_with('Z'));
         assert_eq!(back.polls[0].counts, vec![2, 1]);
         // A second write replaces the first.
-        let r2 = ShowResults { deck: String::new(), written_at: String::new(), phones: 0, polls: vec![], questions: vec![] };
+        let r2 = ShowResults { deck: String::new(), written_at: String::new(), phones: 0, polls: vec![], questions: vec![], feedback: None, reactions: vec![] };
         write_results(&deck, r2).unwrap();
         let back: ShowResults = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(back.polls.is_empty());

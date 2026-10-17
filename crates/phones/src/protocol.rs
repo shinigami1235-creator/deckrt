@@ -102,7 +102,24 @@ pub enum PhoneMessage {
         #[serde(default = "yes")]
         on: bool,
     },
+    /// A reaction for the screen: one of [`REACTIONS`].
+    React { kind: String },
+    /// The talk's feedback form. `rating` is 1 to 5, or 0 when left out. Replaces the
+    /// phone's earlier answer.
+    Feedback {
+        #[serde(default)]
+        rating: u8,
+        #[serde(default)]
+        useful: String,
+        #[serde(default)]
+        better: String,
+        #[serde(default)]
+        anon: bool,
+    },
 }
+
+/// The reactions a phone can send.
+pub const REACTIONS: [&str; 4] = ["heart", "star", "wow", "lost"];
 
 fn yes() -> bool {
     true
@@ -131,7 +148,8 @@ impl PhoneMessage {
         match self {
             PhoneMessage::Join { .. } => Class::Join,
             PhoneMessage::Vote { .. } | PhoneMessage::Text { .. } | PhoneMessage::Rank { .. } | PhoneMessage::Upvote { .. } => Class::Vote,
-            PhoneMessage::Ask { .. } => Class::Control,
+            PhoneMessage::Ask { .. } | PhoneMessage::Feedback { .. } => Class::Control,
+            PhoneMessage::React { .. } => Class::Vote,
             PhoneMessage::Control { .. } | PhoneMessage::Target { .. } => Class::Control,
             PhoneMessage::Drag { .. } | PhoneMessage::Touch { .. } | PhoneMessage::Draw { .. } | PhoneMessage::Erase { .. } => Class::Stream,
             PhoneMessage::Ping { .. } => Class::Ping,
@@ -171,6 +189,13 @@ impl PhoneMessage {
             }
             PhoneMessage::Ask { text, .. } => !text.trim().is_empty() && text.chars().count() <= TEXT_MAX_CHARS,
             PhoneMessage::Upvote { q, .. } => !q.is_empty() && q.len() <= 32,
+            PhoneMessage::React { kind } => REACTIONS.contains(&kind.as_str()),
+            PhoneMessage::Feedback { rating, useful, better, .. } => {
+                *rating <= 5
+                    && useful.chars().count() <= TEXT_MAX_CHARS
+                    && better.chars().count() <= TEXT_MAX_CHARS
+                    && (*rating > 0 || !useful.trim().is_empty() || !better.trim().is_empty())
+            }
         }
     }
 }

@@ -1395,6 +1395,7 @@ dependencies = [
  "deckcraft-render",
  "deckcraft-show-ext",
  "deckcraft-text",
+ "deckcraft-video-out",
  "egui",
  "egui-wgpu",
  "egui_kittest",
@@ -1405,6 +1406,15 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "deckcraft-video-out"
+version = "0.7.0"
+dependencies = [
+ "deckcraft-media",
+ "log",
+ "windows 0.61.3",
 ]
 
 [[package]]

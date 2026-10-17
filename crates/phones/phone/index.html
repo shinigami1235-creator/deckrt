@@ -98,6 +98,25 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
 .zoomrow button { margin: 0; }
 .caption { position: sticky; top: 56px; z-index: 4; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; font-size: 18px; line-height: 1.35; }
 .caption .off { float: right; margin: 0 0 0 8px; width: auto; min-height: 32px; padding: 2px 10px; font-size: 13px; }
+.reacts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.reacts button { margin: 0; padding: 6px 2px; min-height: 64px; font-size: 13px; line-height: 1.2; }
+.reacts button b { display: block; font-size: 24px; line-height: 1.1; }
+.reacts button.sent { border-color: var(--accent); }
+.stars { display: flex; gap: 6px; }
+.stars button { flex: 1 1 0; margin: 0; min-height: 52px; font-size: 26px; padding: 0; color: #6b7280; }
+.stars button[data-on=true] { color: #f2b12c; border-color: #f2b12c; }
+#handout { display: none; }
+@media print {
+  body { background: #fff; color: #000; }
+  main, header, nav { display: none !important; }
+  #handout { display: block !important; font: 12pt/1.4 -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif; }
+  #handout h1 { font-size: 16pt; margin: 0 0 4pt; }
+  #handout .who { color: #555; margin: 0 0 12pt; }
+  #handout .slide { page-break-inside: avoid; break-inside: avoid; margin: 0 0 14pt; }
+  #handout .slide img { width: 100%; border: 1px solid #ccc; }
+  #handout .slide h2 { font-size: 11pt; margin: 0 0 4pt; color: #555; }
+  #handout .slide p { white-space: pre-wrap; margin: 6pt 0 0; }
+}
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -147,6 +166,8 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
       <h2>Slides so far</h2>
       <p class="muted" id="slides-hint">Tap a slide to look at it closely and write notes. Your notes stay on this phone.</p>
       <div class="thumbs" id="thumbs"></div>
+      <button type="button" class="primary" id="handout-btn" hidden>Handout as PDF</button>
+      <p class="muted" id="handout-hint" hidden>The slides you saw with your notes under each. In the print screen, choose Save as PDF.</p>
       <button type="button" id="notes-save">Save my notes</button>
     </div>
     <div id="slide-one" hidden>
@@ -159,6 +180,27 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
       <label for="one-note" style="margin-top:12px">My notes for this slide</label>
       <textarea id="one-note" placeholder="Notes"></textarea>
       <button type="button" class="primary" id="one-back">Back to all slides</button>
+    </div>
+  </section>
+
+  <section class="card" id="feedback" hidden>
+    <h2>How was the talk?</h2>
+    <div class="stars" id="stars"></div>
+    <label for="fb-useful" style="margin-top:12px">What was most useful?</label>
+    <textarea id="fb-useful" maxlength="300"></textarea>
+    <label for="fb-better">What could be better?</label>
+    <textarea id="fb-better" maxlength="300"></textarea>
+    <label class="check"><input type="checkbox" id="fb-anon"> Send without my name</label>
+    <button type="button" class="primary" id="fb-send">Send</button>
+    <p class="muted" id="fb-done" hidden>Thanks, it's in. Change anything and send again to replace it.</p>
+  </section>
+
+  <section class="card" id="reactions" hidden>
+    <div class="reacts" id="reacts">
+      <button type="button" data-k="heart"><b style="color:#e94b5c">&#x2665;&#xFE0E;</b>Love it</button>
+      <button type="button" data-k="star"><b style="color:#f2b12c">&#x2605;&#xFE0E;</b>Great</button>
+      <button type="button" data-k="wow"><b style="color:#8e5ce8">!</b>Wow</button>
+      <button type="button" data-k="lost"><b style="color:#4c8dff">?</b>Lost me</button>
     </div>
   </section>
 
@@ -214,6 +256,7 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
 
   <section class="gone" id="gone" hidden></section>
 </main>
+<div id="handout"></div>
 <script>
 (function () {
   "use strict";
@@ -559,9 +602,11 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
     if (cap) $("caption-text").textContent = cap;
     renderQuestions(show, you);
     renderSlides(show);
+    renderFeedback(show, you);
     // Tabs: Now shows what the screen asks for; the other two are the phone's own.
     var now = st.tab === "now";
-    if (!now) { $("blackout").hidden = true; $("poll").hidden = true; $("control").hidden = true; $("viewer").hidden = true; }
+    $("reactions").hidden = !(show && show.reactions) || blackout || holding;
+    if (!now) { $("blackout").hidden = true; $("poll").hidden = true; $("control").hidden = true; $("viewer").hidden = true; $("reactions").hidden = true; $("feedback").hidden = true; }
     $("questions").hidden = st.tab !== "questions";
     $("slides-tab").hidden = st.tab !== "slides";
     $("tab-now").dataset.on = String(now);
@@ -572,6 +617,68 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
   $("caption-off").addEventListener("click", function () { try { localStorage.setItem("deckrt_captions_off", "1"); } catch (e) {} render(); });
   $("caption-on").addEventListener("click", function () { try { localStorage.removeItem("deckrt_captions_off"); } catch (e) {} render(); });
   function setTab(t) { st.tab = t; if (t !== "slides") st.one = null; render(); window.scrollTo(0, 0); }
+
+  // Reactions: one at a time, a short wait between them.
+  var lastReact = 0;
+  Array.prototype.forEach.call(document.querySelectorAll("#reacts button"), function (b) {
+    b.addEventListener("click", function () {
+      var now = Date.now();
+      if (now - lastReact < 1300) return;
+      lastReact = now;
+      send({ t: "react", kind: b.dataset.k });
+      b.classList.add("sent");
+      setTimeout(function () { b.classList.remove("sent"); }, 600);
+    });
+  });
+
+  // The feedback form, while the presenter has it open.
+  st.rating = 0;
+  (function () {
+    var box = $("stars");
+    for (var i = 1; i <= 5; i++) {
+      (function (n) {
+        var b = document.createElement("button"); b.type = "button"; b.textContent = "\u2605\uFE0E"; b.setAttribute("aria-label", n + " of 5");
+        b.addEventListener("click", function () { st.rating = st.rating === n ? 0 : n; paintStars(); });
+        box.appendChild(b);
+      })(i);
+    }
+  })();
+  function paintStars() {
+    Array.prototype.forEach.call($("stars").children, function (b, i) { b.dataset.on = String(i < st.rating); });
+  }
+  function renderFeedback(show, you) {
+    var open = !!(show && show.feedback);
+    $("feedback").hidden = !open;
+    $("fb-done").hidden = !you.feedback_sent;
+    if (open && st.wasFeedback !== true) { st.tab = "now"; wake("The presenter asks for your feedback."); }
+    st.wasFeedback = open;
+    paintStars();
+  }
+  $("fb-send").addEventListener("click", function () {
+    var useful = $("fb-useful").value.trim(), better = $("fb-better").value.trim();
+    if (!st.rating && !useful && !better) return;
+    send({ t: "feedback", rating: st.rating, useful: useful, better: better, anon: $("fb-anon").checked });
+  });
+
+  // The handout: the slides seen with this phone's notes, printed (or saved as a PDF).
+  $("handout-btn").addEventListener("click", function () {
+    var seen = ((st.show && st.show.seen) || []).slice().sort(function (a, b) { return a - b; });
+    var h = $("handout");
+    h.textContent = "";
+    var t = document.createElement("h1"); t.textContent = (st.show && st.show.title) || "Handout"; h.appendChild(t);
+    var who = document.createElement("p"); who.className = "who"; who.textContent = (st.name || "") + (st.name ? ", " : "") + new Date().toLocaleDateString(); h.appendChild(who);
+    var waiting = seen.length;
+    function done() { if (--waiting <= 0) setTimeout(function () { window.print(); }, 200); }
+    if (!seen.length) return;
+    seen.forEach(function (n) {
+      var d = document.createElement("div"); d.className = "slide";
+      var hd = document.createElement("h2"); hd.textContent = "Slide " + n; d.appendChild(hd);
+      var img = document.createElement("img"); img.alt = "Slide " + n; img.onload = done; img.onerror = done; img.src = slideUrl(n); d.appendChild(img);
+      var note = getNote(n);
+      if (note) { var p = document.createElement("p"); p.textContent = note; d.appendChild(p); }
+      h.appendChild(d);
+    });
+  });
   $("tab-now").addEventListener("click", function () { setTab("now"); });
   $("tab-questions").addEventListener("click", function () { setTab("questions"); });
   $("tab-slides").addEventListener("click", function () { setTab("slides"); });
@@ -717,6 +824,8 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
       });
     }
     $("notes-save").hidden = !seen.some(function (n) { return getNote(n); });
+    $("handout-btn").hidden = !seen.length;
+    $("handout-hint").hidden = !seen.length;
   }
   function openSlide(n) {
     st.one = n; st.zoom = 1;

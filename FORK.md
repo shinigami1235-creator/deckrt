@@ -29,6 +29,10 @@ current) does not apply here.
 | `crates/captions/src/coach.rs` | Rehearse with Coach's analysis: phrases laid against the slides shown, filler words (English and Thai), pauses, pace, slides read out |
 | `crates/engine/src/cmd/deckrt_coach.rs` | `deckrt.keepPace`: each slide's rehearsed seconds in the slide tag `DECKRT.PACE` |
 | `crates/ui-egui/src/deckrt/coach.rs`, `finder.rs` | Rehearse with Coach (the listening, the report, the pace line in presenter view); Find a Slide (the deck index, thumbnails, search, insert) |
+| `crates/captions/src/recorder.rs` | The microphone into memory for narration (22 050 Hz mono); `DECKRT_RECORD_TEST=<wav>` plays a file in instead |
+| `crates/engine/src/cmd/deckrt_record.rs` | `deckrt.setNarration`, `deckrt.clearNarration`: each slide's recording as an audio clip tagged `DECKRT.NARRATION`, started by a Play effect |
+| `crates/video-out` | Export to Video's writer: NV12 frames and 16-bit PCM into H.264 and AAC in an MP4, through Media Foundation's sink writer on Windows. Allows `unsafe` for the COM calls, like `crates/show-ext` |
+| `crates/ui-egui/src/deckrt/record.rs`, `video.rs`, `crowd.rs` | The Record tab and recording during a show; the Export to Video window and its thread; reactions from phones and the feedback form |
 | `crates/ui-egui/src/deckrt/check.rs`, `privacy.rs`, `captions.rs`, `questions.rs` | Their windows and buttons; Blur Area's drag; the caption band; questions from phones |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
@@ -104,6 +108,11 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/show.rs` (round 4) | `slide_start` and `show_start` are `pub(crate)` for the coach and the pace line |
 | `crates/ui-egui/src/ribbon.rs` (round 4) | Rehearse with Coach after Rehearse Timings on the Slide Show tab; Find a Slide after New Slide on the Home tab |
 | `apps/deckcraft/src/main.rs` (round 4) | `pick_open("folder")` opens a folder picker, for Find a Slide's Add folder |
+| `crates/engine/src/cmd/mod.rs` (round 5) | `pub mod deckrt_record;` and its `specs()`; `deckrt.addNotes` lives in `deckrt_coach.rs` |
+| `crates/pptx/src/write/shapes.rs` (round 5) | an audio or video clip's tags go in its `p:nvPr` like a picture's (upstream dropped them) |
+| `crates/ui-egui/src/show.rs` (round 5) | no advancing by the slides' timings while recording or with the coach (`deckrt::record::active`); narration doesn't start by itself while recording or with Play Narrations off (`deckrt::record::may_play`, in `show_media` and `run_media_cues`) |
+| `crates/ui-egui/src/ribbon.rs` (round 5) | the Record tab is deckrt's (`deckrt::record::ribbon`); the Slide Show tab's Record button is `deckrt::record::slide_show_button` |
+| `.github/workflows/windows-build.yml` (round 5) | also runs `deckcraft-video-out`'s tests and `deckcraft-ui-egui`'s `deckrt::video` tests, which make real MP4s; `video-check.yml` runs just the video crate on pushes to `wip/video-check` |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -174,6 +183,26 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   cloud (reading them would download them), and folders like `node_modules` and `AppData`.
   The open deck is left out of the results. Inserting goes through `slide.reuse`, so objects
   and their pictures come along.
+
+- Narration is kept the way PowerPoint keeps it: an audio clip per slide in the bottom-right,
+  hidden in the show, with a Play effect first in the slide's animations, and the slide's
+  Advance After set to the recording's length. The clip is a 16-bit mono WAV at 22 050 Hz
+  (about 2.6 MB a minute) since deckrt has no audio encoder of its own. Slides passed in under
+  half a second keep what they had. Pause stops the recording and the slide's clock together.
+- Export to Video holds each slide for its narration, else its Advance After time, else the
+  seconds asked for; hidden slides are left out; a transition becomes a fade of up to 2 s.
+  Animations show finished and videos on slides show their poster frame. The video runs at
+  10 frames a second with the encoder's quality setting (75) instead of a fixed bitrate, so a
+  still slide costs almost nothing after its first frame; sound is AAC at 96 kbit/s, mono.
+  Media Foundation is used because it ships with Windows (hardware encoding where there is
+  some) and nothing permissive and pure-Rust encodes AAC.
+- Reactions: four, drawn by deckrt (heart, star, `!`, `?`) rather than emoji, one per phone
+  every 1.2 s, at most 40 in the air. The feedback form opens on the phones when the
+  presenter asks, and by itself once when the show reaches its end. Both go in
+  `<deck>.results.json`.
+- The handout is printed by the phone's own browser (Save as PDF), so Thai notes come out in
+  the phone's fonts; the deck's slide pictures come from the same phone-sized JPEGs as the
+  Slides tab.
 
 ## PowerPoint feel: next run
 

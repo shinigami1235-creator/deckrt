@@ -29,6 +29,7 @@ deckcraft-interactive = { workspace = true }
 deckcraft-model3d = { workspace = true }
 deckcraft-phones = { workspace = true }
 deckcraft-captions = { workspace = true }
+deckcraft-video-out = { workspace = true }
 deckcraft-show-ext = { workspace = true }
 egui-wgpu = { version = "0.36", optional = true }
 image = { workspace = true }

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use super::{Cut, Cutter, RATE, Settings, clean_line, resample};
+use super::{Cut, Cutter, RATE, Settings, clean_line, resample_to};
 
 /// What the captioner tells the app.
 #[derive(Clone, Debug, PartialEq)]
@@ -40,91 +40,11 @@ impl Captioner {
     pub fn start(model: std::path::PathBuf, settings: Settings) -> Captioner {
         let (cmd_tx, cmd_rx) = channel::<Cmd>();
         let (ev_tx, ev_rx) = channel::<Event>();
-        let (audio_tx, audio_rx) = channel::<Vec<f32>>();
-        let stop_audio = Arc::new(AtomicBool::new(false));
 
-        // The microphone: a stream that must stay on the thread that made it.
-        let stop = stop_audio.clone();
+        // The microphone, at the recogniser's rate.
         let ev_mic = ev_tx.clone();
-        let (mic_name_tx, mic_name_rx) = channel::<Result<String, String>>();
-        let _ = std::thread::Builder::new().name("deckrt-captions-mic".into()).spawn(move || {
-            let host = cpal::default_host();
-            let Some(device) = host.default_input_device() else {
-                let _ = mic_name_tx.send(Err("No microphone found. Plug one in or turn it on in Windows sound settings.".into()));
-                return;
-            };
-            let name = device.name().unwrap_or_else(|_| "the microphone".into());
-            let config = match device.default_input_config() {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = mic_name_tx.send(Err(format!("The microphone can't be opened: {e}")));
-                    return;
-                }
-            };
-            let rate = config.sample_rate().0;
-            let channels = config.channels().max(1) as usize;
-            let err_tx = ev_mic.clone();
-            let on_err = move |e: cpal::StreamError| {
-                let _ = err_tx.send(Event::Error(format!("The microphone stopped: {e}")));
-            };
-            let tx = audio_tx.clone();
-            let mono = move |data: &[f32]| -> Vec<f32> { data.chunks(channels).map(|c| c.iter().sum::<f32>() / c.len() as f32).collect() };
-            let stream = match config.sample_format() {
-                cpal::SampleFormat::F32 => device.build_input_stream(
-                    &config.clone().into(),
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        let _ = tx.send(resample(&mono(data), rate));
-                    },
-                    on_err,
-                    None,
-                ),
-                cpal::SampleFormat::I16 => {
-                    let tx = audio_tx.clone();
-                    device.build_input_stream(
-                        &config.clone().into(),
-                        move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                            let f: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
-                            let m: Vec<f32> = f.chunks(channels).map(|c| c.iter().sum::<f32>() / c.len() as f32).collect();
-                            let _ = tx.send(resample(&m, rate));
-                        },
-                        on_err,
-                        None,
-                    )
-                }
-                cpal::SampleFormat::U16 => {
-                    let tx = audio_tx.clone();
-                    device.build_input_stream(
-                        &config.clone().into(),
-                        move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                            let f: Vec<f32> = data.iter().map(|s| (*s as f32 - 32768.0) / 32768.0).collect();
-                            let m: Vec<f32> = f.chunks(channels).map(|c| c.iter().sum::<f32>() / c.len() as f32).collect();
-                            let _ = tx.send(resample(&m, rate));
-                        },
-                        on_err,
-                        None,
-                    )
-                }
-                other => {
-                    let _ = mic_name_tx.send(Err(format!("The microphone sends {other:?} samples, which deckrt can't read.")));
-                    return;
-                }
-            };
-            let stream = match stream {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = mic_name_tx.send(Err(format!("The microphone can't be opened: {e}")));
-                    return;
-                }
-            };
-            if let Err(e) = stream.play() {
-                let _ = mic_name_tx.send(Err(format!("The microphone can't start: {e}")));
-                return;
-            }
-            let _ = mic_name_tx.send(Ok(name));
-            while !stop.load(Ordering::Relaxed) {
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            drop(stream);
+        let (audio_rx, mic_name_rx, stop_audio) = spawn_mic(RATE as u32, move |e| {
+            let _ = ev_mic.send(Event::Error(e));
         });
 
         // The recogniser.
@@ -248,4 +168,97 @@ impl Drop for Captioner {
         self.stop_audio.store(true, Ordering::Relaxed);
         let _ = self.cmd.send(Cmd::Stop);
     }
+}
+
+/// Open the default microphone on a thread of its own (a stream must stay on the thread that
+/// made it). Mono samples at `rate` come out of the first receiver; the second says the
+/// microphone's name once it is open, or why it couldn't be. Setting the flag closes it.
+pub(crate) fn spawn_mic(
+    rate_out: u32,
+    on_error: impl Fn(String) + Send + Clone + 'static,
+) -> (Receiver<Vec<f32>>, Receiver<Result<String, String>>, Arc<AtomicBool>) {
+    let (audio_tx, audio_rx) = channel::<Vec<f32>>();
+    let (name_tx, name_rx) = channel::<Result<String, String>>();
+    let stop_audio = Arc::new(AtomicBool::new(false));
+    let stop = stop_audio.clone();
+    let _ = std::thread::Builder::new().name("deckrt-mic".into()).spawn(move || {
+        let host = cpal::default_host();
+        let Some(device) = host.default_input_device() else {
+            let _ = name_tx.send(Err("No microphone found. Plug one in or turn it on in Windows sound settings.".into()));
+            return;
+        };
+        let name = device.name().unwrap_or_else(|_| "the microphone".into());
+        let config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = name_tx.send(Err(format!("The microphone can't be opened: {e}")));
+                return;
+            }
+        };
+        let rate = config.sample_rate().0;
+        let channels = config.channels().max(1) as usize;
+        let on_err = {
+            let on_error = on_error.clone();
+            move |e: cpal::StreamError| on_error(format!("The microphone stopped: {e}"))
+        };
+        let mono = move |f: &[f32]| -> Vec<f32> { f.chunks(channels).map(|c| c.iter().sum::<f32>() / c.len() as f32).collect() };
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::F32 => {
+                let tx = audio_tx.clone();
+                device.build_input_stream(
+                    &config.clone().into(),
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        let _ = tx.send(resample_to(&mono(data), rate, rate_out));
+                    },
+                    on_err,
+                    None,
+                )
+            }
+            cpal::SampleFormat::I16 => {
+                let tx = audio_tx.clone();
+                device.build_input_stream(
+                    &config.clone().into(),
+                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                        let f: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
+                        let _ = tx.send(resample_to(&mono(&f), rate, rate_out));
+                    },
+                    on_err,
+                    None,
+                )
+            }
+            cpal::SampleFormat::U16 => {
+                let tx = audio_tx.clone();
+                device.build_input_stream(
+                    &config.clone().into(),
+                    move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                        let f: Vec<f32> = data.iter().map(|s| (*s as f32 - 32768.0) / 32768.0).collect();
+                        let _ = tx.send(resample_to(&mono(&f), rate, rate_out));
+                    },
+                    on_err,
+                    None,
+                )
+            }
+            other => {
+                let _ = name_tx.send(Err(format!("The microphone sends {other:?} samples, which deckrt can't read.")));
+                return;
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = name_tx.send(Err(format!("The microphone can't be opened: {e}")));
+                return;
+            }
+        };
+        if let Err(e) = stream.play() {
+            let _ = name_tx.send(Err(format!("The microphone can't start: {e}")));
+            return;
+        }
+        let _ = name_tx.send(Ok(name));
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        drop(stream);
+    });
+    (audio_rx, name_rx, stop_audio)
 }

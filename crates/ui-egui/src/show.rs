@@ -676,7 +676,9 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         let n_steps = show.timeline(&doc).steps();
         let step_due = cur_step < n_steps && ((show.autoplay && idle > 0.3) || next_auto);
         let holding = show.grid || show.zoom.is_some() || show.zoom_arm;
-        if !holding && (step_due || (!show.rehearse && show.state.auto_advance_due(&doc, idle) && !show.ended)) {
+        // deckrt hook: no advancing by the slides' timings while recording or with the coach.
+        let timed = !show.rehearse && !crate::deckrt::record::active(&show) && show.state.auto_advance_due(&doc, idle);
+        if !holding && (step_due || (timed && !show.ended)) {
             actions.push(show.state.next(&doc));
         } else if show.preview_only && cur_step >= n_steps && idle > 0.8 {
             keep = false;
@@ -1122,7 +1124,8 @@ fn show_media(app: &mut SlideApp, show: &mut Show, doc_uid: u64, doc: &Presentat
     }
     if let Some(i) = cur {
         for (id, _, clip) in crate::media::slide_media(doc, i) {
-            if clip.autoplay && !keep.contains(&id) {
+            if clip.autoplay && !keep.contains(&id) && crate::deckrt::record::may_play(show, doc, id) {
+                // deckrt hook: narration waits while recording and with Play Narrations off.
                 app.media.play(doc_uid, doc, id, &clip, None, crate::media::Owner::Show);
             }
         }
@@ -1134,6 +1137,9 @@ fn show_media(app: &mut SlideApp, show: &mut Show, doc_uid: u64, doc: &Presentat
 fn run_media_cues(app: &mut SlideApp, show: &mut Show, doc_uid: u64, doc: &Presentation) {
     for (id, effect) in std::mem::take(&mut show.media_cues) {
         let Some(clip) = crate::media::find_clip(doc, id) else { continue };
+        if effect != "pause" && effect != "stop" && !crate::deckrt::record::may_play(show, doc, id) {
+            continue; // deckrt hook: narration waits while recording and with Play Narrations off
+        }
         match effect.as_str() {
             "pause" => app.media.toggle(doc_uid, doc, id, &clip, crate::media::Owner::Show),
             "stop" => app.media.stop(id),

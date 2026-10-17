@@ -102,6 +102,9 @@ pub struct Ext {
     pub captions: Option<super::captions::Live>,
     /// Captions were started (or failed) for this show.
     pub captions_tried: bool,
+    /// Record: asked for when the show starts, then recording.
+    pub record_wanted: bool,
+    pub record: Option<super::record::Live>,
     /// Rehearse with Coach: asked for when the show starts, then listening.
     pub coach_wanted: bool,
     pub coach: Option<super::coach::Live>,
@@ -150,6 +153,8 @@ impl Default for Ext {
             phones: None,
             captions: None,
             captions_tried: false,
+            record_wanted: false,
+            record: None,
             coach_wanted: false,
             coach: None,
             pace: None,
@@ -650,6 +655,9 @@ pub fn draw(
     let below = if role == Role::Audience { super::captions::draw(painter, map.srect, ext.captions.as_ref(), now) } else { 0.0 };
     if role == Role::Audience {
         super::coach::draw(painter, map.srect, ext.coach.as_ref());
+        if let Some(ph) = ext.phones.as_ref() {
+            super::crowd::draw(painter, map.srect, &ph.crowd, now);
+        }
     }
     if let Some(q) = ext.phones.as_ref().and_then(|p| p.questions.shown_question()) {
         super::questions::draw_on_screen(painter, map.srect, q, below);
@@ -1582,6 +1590,7 @@ pub fn presenter_builder(show: &Show) -> egui::ViewportBuilder {
 /// The display picker and Swap in the presenter window's toolbar.
 pub fn presenter_toolbar(ui: &mut Ui, show: &mut Show) {
     dark_widgets(ui);
+    super::record::presenter_controls(ui, show);
     super::coach::presenter_status(ui, show);
     if show.ext.captions.is_some() {
         ui.separator();
@@ -1659,6 +1668,18 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
             show.ext.error = Some(format!("The phone server did not start: {e}"));
         }
         show.ext.phones = Some(phones);
+    }
+    super::record::logic(show, ctx);
+    // The end of the show opens the feedback form on the phones, once.
+    if show.ended
+        && let Some(ph) = show.ext.phones.as_mut()
+        && !ph.crowd.auto_asked
+    {
+        ph.crowd.auto_asked = true;
+        if !ph.crowd.feedback_open {
+            ph.crowd.feedback_open = true;
+            ph.changed();
+        }
     }
     super::coach::logic(app, show, ctx, doc, now);
     super::captions::logic(app, show, ctx, doc, now);
@@ -1739,6 +1760,7 @@ pub fn draw_qr(show: &Show, painter: &egui::Painter, full: Rect, srect: Rect) {
 
 /// The end of the show: the phones are told and the results written, the pictures dropped.
 pub fn end_show(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
+    super::record::end_show(app, show);
     super::coach::end_show(app, show);
     if let Some(ph) = show.ext.phones.take() {
         ph.stop(&show.ext.states, doc);
@@ -1791,6 +1813,11 @@ pub fn presenter_phones(ui: &mut Ui, show: &mut Show, rect: Rect) -> f32 {
     let qrect = Rect::from_min_max(pos2(rect.min.x, rect.min.y + h), rect.max);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(qrect));
     dark_widgets(&mut child);
+    let slide = show.state.slide;
+    if super::crowd::section(&mut child, &mut ph.crowd, slide) {
+        ph.changed();
+    }
+    child.add_space(4.0);
     if super::questions::section(&mut child, &mut ph.questions) {
         ph.changed();
     }
