@@ -9,7 +9,7 @@ that are known, and how to get the program. `FORK.md` describes the code.
 
 1. Open https://github.com/shinigami1235-creator/deckrt and click **Actions**.
 2. Open the newest green **Windows build** run on the `wip/fable-partial` branch. The last one
-   this report was checked against is run 38992403485.
+   this report was checked against is run 38996822483 (commit `8531045`).
 3. Under **Artifacts** at the bottom, download **deckrt-windows-x64-installer** (the MSI) or
    **deckrt-windows-x64** (a zip with `deckrt.exe`, `deckcraft-cli.exe` and `Start deckrt.bat`).
 4. Run the MSI, or unzip the zip anywhere and double-click `deckrt.exe`. SmartScreen will say the
@@ -66,8 +66,8 @@ off the right edge. The fork does not touch the Home tab. It is item 1 of the ne
 builds the `deckrt` and `deckcraft-cli` binaries.
 
 The Windows workflow (`.github/workflows/windows-build.yml`) builds both exes, runs the tests of
-the fork crates and the app on Windows, and uploads the zip and the MSI. Run 38992403485 on
-commit `8afe20b` is green with both artifacts.
+the fork crates and the app on Windows, and uploads the zip and the MSI. Runs 38992403485
+(`8afe20b`) and 38996822483 (`8531045`) are green with both artifacts.
 
 ## What could not be checked here
 
