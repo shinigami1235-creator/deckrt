@@ -3,6 +3,7 @@
 //! `UPSTREAM_HOOKS.md`).
 
 pub mod canvas;
+pub mod check;
 #[cfg(feature = "gpu3d")]
 pub mod gpu;
 #[cfg(not(feature = "gpu3d"))]
@@ -67,6 +68,8 @@ pub struct State {
     pub picking: bool,
     /// Pictures the show draws, as textures.
     pub pictures: pictures::Pictures,
+    /// The deck revision the check before showing last passed (or was waved through) at.
+    pub check_passed: Option<u64>,
     /// The connected displays, asked for when a show starts (the desktop app fills this in).
     pub list_displays: Option<Box<dyn FnMut() -> Vec<show::DisplayInfo>>>,
 }
@@ -279,13 +282,15 @@ fn pick_many(app: &mut SlideApp, purpose: &str) -> Vec<String> {
 pub fn dialog_title(id: &str) -> &'static str {
     match id {
         "deckrt.imported" => "Interactive objects brought in",
+        check::DIALOG => check::title(),
         _ => "deckrt",
     }
 }
 
 /// Bodies of the `deckrt.*` dialogs. Returns whether the dialog closes.
-pub fn dialog(_app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> bool {
+pub fn dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -> bool {
     match d.id.as_str() {
+        check::DIALOG => check::body(app, ui, d),
         "deckrt.imported" => {
             let text = d.params.get("text").and_then(Value::as_str).unwrap_or("").to_string();
             ui.set_max_width(460.0);

@@ -2063,6 +2063,7 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
             app.ui.presenter_view = !on;
         }
         big(app, ui, Icon::CustomShow, "Custom\nShow", "app.dialog", json!({"id": "customShow"}));
+        crate::deckrt::check::ribbon_button(app, ui); // deckrt hook
     });
     group(ui, |ui| {
         big(app, ui, Icon::SetUpShow, "Set Up\nSlide Show", "app.dialog", json!({"id": "setupShow"}));

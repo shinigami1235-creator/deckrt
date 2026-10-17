@@ -1078,6 +1078,10 @@ impl SlideApp {
     }
 
     pub fn start_show(&mut self, from: usize, reading: bool) {
+        // deckrt hook: the check before a talk opens instead of the show when it finds a problem.
+        if deckrt::check::gate(self, from, reading) {
+            return;
+        }
         self.anim_preview = None;
         self.media.stop_owned(media::Owner::Editor);
         if let Some(d) = self.session.active() {
