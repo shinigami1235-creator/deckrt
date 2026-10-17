@@ -41,6 +41,8 @@ pub struct Tokens {
     pub caret: Color32,
     pub text_selection: Color32,
     pub field_bg: Color32,
+    /// deckrt: the border of a text field, check box or framed button, as Office draws them.
+    pub field_border: Color32,
     pub shadow: Color32,
 }
 
@@ -70,6 +72,7 @@ impl Tokens {
             caret: Color32::BLACK,
             text_selection: Color32::from_rgba_unmultiplied(0x5A, 0x8F, 0xE0, 90),
             field_bg: Color32::WHITE,
+            field_border: Color32::from_rgb(0xB4, 0xB4, 0xB4),
             shadow: Color32::from_black_alpha(28),
         }
     }
@@ -98,6 +101,7 @@ impl Tokens {
             caret: Color32::BLACK,
             text_selection: Color32::from_rgba_unmultiplied(0x5A, 0x8F, 0xE0, 90),
             field_bg: Color32::from_rgb(0x2A, 0x2A, 0x2A),
+            field_border: Color32::from_rgb(0x6A, 0x6A, 0x6A),
             shadow: Color32::from_black_alpha(90),
         }
     }
@@ -132,10 +136,12 @@ pub fn apply(ctx: &egui::Context, t: &Tokens) {
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.separator);
     v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     v.widgets.inactive.bg_fill = t.field_bg;
-    v.widgets.inactive.bg_stroke = Stroke::NONE;
+    // deckrt hook: fields, check boxes and buttons keep a thin border like Office's, so an
+    // empty text box or an unticked box can be seen before it is hovered.
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, t.field_border);
     v.widgets.hovered.weak_bg_fill = t.hover;
     v.widgets.hovered.bg_fill = t.hover;
-    v.widgets.hovered.bg_stroke = Stroke::NONE;
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.field_border);
     v.widgets.active.weak_bg_fill = t.pressed;
     v.widgets.active.bg_fill = t.pressed;
     v.widgets.open.weak_bg_fill = t.pressed;

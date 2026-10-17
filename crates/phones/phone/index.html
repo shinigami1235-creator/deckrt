@@ -164,7 +164,7 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
   <section class="card" id="slides-tab" hidden>
     <div id="slides-grid-ui">
       <h2>Slides so far</h2>
-      <p class="muted" id="slides-hint">Tap a slide to look at it closely and write notes. Your notes stay on this phone.</p>
+      <p class="muted" id="slides-hint">Tap a slide to look at it closely and write notes. Notes stay on this phone.</p>
       <div class="thumbs" id="thumbs"></div>
       <button type="button" class="primary" id="handout-btn" hidden>Handout as PDF</button>
       <p class="muted" id="handout-hint" hidden>The slides you saw with your notes under each. In the print screen, choose Save as PDF.</p>
@@ -805,7 +805,7 @@ textarea { width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; bord
   function slideUrl(n) { return "/slide/" + n + "?t=" + encodeURIComponent(token); }
   function renderSlides(show) {
     var seen = (show && show.seen) || [];
-    $("slides-hint").textContent = seen.length ? "Tap a slide to look at it closely and write notes. Your notes stay on this phone." : "Slides appear here once they have been on the screen.";
+    $("slides-hint").textContent = seen.length ? "Tap a slide to look at it closely and write notes. Notes stay on this phone." : "Slides appear here once they have been on the screen.";
     $("slides-grid-ui").hidden = st.one !== null;
     $("slide-one").hidden = st.one === null;
     var box = $("thumbs");

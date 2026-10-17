@@ -428,6 +428,13 @@ pub struct InteractiveObject {
     /// Whether the object shows when the slide opens.
     #[serde(default = "yes")]
     pub visible: bool,
+    /// How many presses of Next (the clicker, the arrow keys, a click on the slide) fire the
+    /// object before the show moves on, after the slide's own animations.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_clicks: u32,
+    /// Fired once as the slide opens.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub with_slide: bool,
     #[serde(default)]
     pub anchor: Option<Anchor>,
 }
@@ -438,11 +445,14 @@ fn version() -> u32 {
 fn yes() -> bool {
     true
 }
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
 
 impl InteractiveObject {
     pub fn new(config: Config) -> Self {
         let trigger = if config.kind() == Kind::Measure { Trigger::AudienceClick } else { Trigger::Presenter };
-        InteractiveObject { v: VERSION, config, label: String::new(), trigger, shortcut: None, visible: true, anchor: None }
+        InteractiveObject { v: VERSION, config, label: String::new(), trigger, shortcut: None, visible: true, next_clicks: 0, with_slide: false, anchor: None }
     }
 
     pub fn kind(&self) -> Kind {

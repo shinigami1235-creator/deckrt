@@ -110,7 +110,7 @@ fn media(doc: &Presentation, out: &mut Out) {
                     "note",
                     Some(i),
                     Some(sh.id.0),
-                    format!("The {what} \"{}\" is linked, not kept inside the deck, so it won't play if the deck is copied without it.", m.name),
+                    format!("The {what} \"{}\" is linked from another file and won't play if the deck is copied without that file.", m.name),
                     None,
                 );
             }

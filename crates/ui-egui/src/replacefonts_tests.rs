@@ -15,7 +15,9 @@ fn harness() -> Harness<'static, SlideApp> {
     s.execute("format.font", &json!({"family": "Comic Neue"})).unwrap();
     s.execute("format.size", &json!({"size": 40})).unwrap();
     let app = SlideApp::new(s, Services::default());
-    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+    // deckrt hook: wide enough for the Home tab, since a narrower window moves the Editing
+    // group into the More menu.
+    let mut h = Harness::builder().with_size(egui::vec2(1920.0, 900.0)).with_step_dt(1.0 / 60.0).build_ui_state(
         |ui, app: &mut SlideApp| {
             app.logic(ui.ctx());
             app.ui(ui);

@@ -193,14 +193,142 @@ pub fn color_split(ui: &mut Ui, icon: Icon, tip: &str, color: Color32, enabled: 
     (main.on_hover_text(tip), arrow)
 }
 
-/// A ribbon group: contents, then a thin vertical separator.
+/// A ribbon group: contents, then a thin vertical separator. deckrt hook: while the ribbon is
+/// being drawn (`fit_begin` to `fit_end`), a group that would run past the window's edge moves
+/// into the More menu at the right end, rightmost groups first.
 pub fn group<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    let r = ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
-        add(ui)
-    });
-    separator(ui);
-    r.inner
+    let ctx = ui.ctx().clone();
+    let Some(mut fit) = ctx.data(|d| d.get_temp::<Fit>(egui::Id::new(FIT_ID))) else {
+        let r = ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
+            add(ui)
+        });
+        separator(ui);
+        return r.inner;
+    };
+    let n = fit.next;
+    fit.next += 1;
+    let wkey = egui::Id::new(("ribbon-group-width", fit.tab, n));
+    let hidden = fit.hide_from.is_some_and(|k| n >= k);
+    let r = if !hidden {
+        let x0 = ui.cursor().min.x;
+        let r = ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
+            add(ui)
+        });
+        separator(ui);
+        let w = ui.cursor().min.x - x0;
+        ctx.data_mut(|d| d.insert_temp(wkey, w));
+        r.inner
+    } else if fit.open {
+        // In the More menu: each hidden group in a card of its own, stacked under the button.
+        let w = ctx.data(|d| d.get_temp::<f32>(wkey)).unwrap_or(200.0);
+        let pos = pos2((fit.right - w).max(8.0), fit.y);
+        let area = egui::Area::new(egui::Id::new(("ribbon-more-group", fit.tab, n))).order(egui::Order::Foreground).fixed_pos(pos).show(&ctx, |ui| {
+            let t = Tokens::get(ui.ctx());
+            egui::Frame::popup(ui.style()).fill(t.card).show(ui, |ui| {
+                ui.set_min_height(RIBBON_H);
+                let r = ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
+                    add(ui)
+                });
+                r.inner
+            })
+        });
+        let rect = area.response.rect;
+        fit.y = rect.max.y + 4.0;
+        fit.menu_rects.push(rect);
+        area.inner.inner
+    } else {
+        // Out of sight: drawn where nothing shows and nothing can be clicked, so the group's
+        // result still comes back to its caller.
+        let w = ctx.data(|d| d.get_temp::<f32>(wkey)).unwrap_or(1.0).max(1.0);
+        let mut ghost = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(-20_000.0, -20_000.0), vec2(w, RIBBON_H))).invisible());
+        ghost.horizontal_top(add).inner
+    };
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(FIT_ID), fit));
+    r
+}
+
+const FIT_ID: &str = "deckrt-ribbon-fit";
+const MORE_W: f32 = 52.0;
+
+/// The ribbon's fitting for one frame: which groups go into the More menu.
+#[derive(Clone, Default)]
+struct Fit {
+    tab: u64,
+    next: usize,
+    hide_from: Option<usize>,
+    open: bool,
+    right: f32,
+    y: f32,
+    menu_rects: Vec<Rect>,
+}
+
+fn tab_key(tab: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    tab.hash(&mut h);
+    h.finish()
+}
+
+/// Start fitting the groups of `tab` into `inner`, from the widths they took when last drawn.
+pub fn fit_begin(ui: &Ui, tab: &str, inner: Rect) {
+    let ctx = ui.ctx();
+    let key = tab_key(tab);
+    let count = ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("ribbon-group-count", key)))).unwrap_or(0);
+    let widths: Vec<Option<f32>> = (0..count).map(|n| ctx.data(|d| d.get_temp::<f32>(egui::Id::new(("ribbon-group-width", key, n))))).collect();
+    let total: f32 = widths.iter().map(|w| w.unwrap_or(0.0)).sum();
+    let hide_from = if widths.iter().all(Option::is_some) && total > inner.width() {
+        let mut x = 0.0;
+        let mut k = 0;
+        for (n, w) in widths.iter().enumerate() {
+            x += w.unwrap_or(0.0);
+            if x + MORE_W > inner.width() {
+                k = n;
+                break;
+            }
+        }
+        Some(k)
+    } else {
+        None
+    };
+    let open = hide_from.is_some() && ctx.data(|d| d.get_temp::<bool>(egui::Id::new(("ribbon-more-open", key)))).unwrap_or(false);
+    let fit = Fit { tab: key, next: 0, hide_from, open, right: inner.max.x, y: inner.max.y + 12.0, menu_rects: vec![] };
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(FIT_ID), fit));
+}
+
+/// End the fitting: the More button, and the menu closing on a click elsewhere.
+pub fn fit_end(ui: &mut Ui, tab: &str, inner: Rect) {
+    let ctx = ui.ctx().clone();
+    let key = tab_key(tab);
+    let Some(fit) = ctx.data_mut(|d| d.remove_temp::<Fit>(egui::Id::new(FIT_ID))) else { return };
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(("ribbon-group-count", key)), fit.next));
+    let open_key = egui::Id::new(("ribbon-more-open", key));
+    if fit.hide_from.is_none() {
+        ctx.data_mut(|d| d.remove_temp::<bool>(open_key));
+        return;
+    }
+    let rect = Rect::from_min_max(pos2(inner.max.x - MORE_W, inner.min.y), pos2(inner.max.x, inner.min.y + RIBBON_H - 2.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let resp = big_button_ex(&mut child, Icon::More, "More", true, false, fit.open).0.on_hover_text("The groups that don't fit in the window");
+    let mut open = fit.open;
+    if resp.clicked() {
+        open = !open;
+    } else if open
+        && ctx.input(|i| i.pointer.any_pressed())
+        && let Some(p) = ctx.input(|i| i.pointer.interact_pos())
+        && !fit.menu_rects.iter().any(|r| r.contains(p))
+        && !rect.contains(p)
+        // A drop-down opened from a group in the menu is a popup of its own.
+        && !ctx.layer_id_at(p).is_some_and(|l| matches!(l.order, egui::Order::Foreground | egui::Order::Tooltip | egui::Order::Debug))
+    {
+        open = false;
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        open = false;
+    }
+    ctx.data_mut(|d| d.insert_temp(open_key, open));
 }
 
 pub fn separator(ui: &mut Ui) {

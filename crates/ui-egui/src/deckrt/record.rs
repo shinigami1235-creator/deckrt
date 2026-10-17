@@ -168,7 +168,7 @@ pub fn presenter_controls(ui: &mut Ui, show: &mut Show) {
     let mut f = m;
     f.set_width(m.width() * lvl);
     ui.painter().rect_filled(f, CornerRadius::same(2), if lvl > 0.95 { Color32::from_rgb(0xe5, 0x39, 0x35) } else { Color32::from_rgb(0x4c, 0xaf, 0x50) });
-    if ui.button(if paused { "Resume" } else { "Pause" }).on_hover_text("While paused nothing is recorded and the slide's time stands still").clicked() {
+    if ui.button(if paused { "Resume" } else { "Pause" }).on_hover_text("Pause stops the recording and the slide's clock").clicked() {
         live.rec.set_paused(!paused);
     }
     match &live.rec.status {
@@ -230,7 +230,7 @@ pub fn end_show(app: &mut SlideApp, show: &mut Show) {
             let voiced = r["slides"].as_u64().unwrap_or(0);
             let t = deckcraft_captions::coach::clock(total);
             app.set_status(if voiced == 0 {
-                format!("Timings recorded on {n} slides, {t} in all. No sound came from the microphone, so there's no narration.")
+                format!("Timings recorded on {n} slides, {t} in all. The microphone sent no sound.")
             } else {
                 format!("Recorded {voiced} slide{}, {t} in all. Save the deck to keep it.", if voiced == 1 { "" } else { "s" })
             });

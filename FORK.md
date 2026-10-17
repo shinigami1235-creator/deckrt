@@ -33,6 +33,7 @@ current) does not apply here.
 | `crates/engine/src/cmd/deckrt_record.rs` | `deckrt.setNarration`, `deckrt.clearNarration`: each slide's recording as an audio clip tagged `DECKRT.NARRATION`, started by a Play effect |
 | `crates/video-out` | Export to Video's writer: NV12 frames and 16-bit PCM into H.264 and AAC in an MP4, through Media Foundation's sink writer on Windows. Allows `unsafe` for the COM calls, like `crates/show-ext` |
 | `crates/ui-egui/src/deckrt/record.rs`, `video.rs`, `crowd.rs` | The Record tab and recording during a show; the Export to Video window and its thread; reactions from phones and the feedback form |
+| `crates/engine/src/cmd/deckrt_tidy.rs` | `deckrt.tidy`: Tidy This Slide, worked out on a copy of the slide and applied as one undo step |
 | `crates/ui-egui/src/deckrt/check.rs`, `privacy.rs`, `captions.rs`, `questions.rs` | Their windows and buttons; Blur Area's drag; the caption band; questions from phones |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
@@ -113,6 +114,12 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/show.rs` (round 5) | no advancing by the slides' timings while recording or with the coach (`deckrt::record::active`); narration doesn't start by itself while recording or with Play Narrations off (`deckrt::record::may_play`, in `show_media` and `run_media_cues`) |
 | `crates/ui-egui/src/ribbon.rs` (round 5) | the Record tab is deckrt's (`deckrt::record::ribbon`); the Slide Show tab's Record button is `deckrt::record::slide_show_button` |
 | `.github/workflows/windows-build.yml` (round 5) | also runs `deckcraft-video-out`'s tests and `deckcraft-ui-egui`'s `deckrt::video` tests, which make real MP4s; `video-check.yml` runs just the video crate on pushes to `wip/video-check` |
+| `crates/engine/src/cmd/mod.rs` (round 6) | `pub mod deckrt_tidy;` and its `specs()` |
+| `crates/ui-egui/src/widgets.rs` (round 6) | `group` fits the ribbon: groups past the window's edge go into a More menu at the right end (`fit_begin`, `fit_end`), each in its own card; a hidden group is drawn off screen and invisible so its caller still gets its result |
+| `crates/ui-egui/src/ribbon.rs` (round 6) | `fit_begin` and `fit_end` around the tab's groups; Tidy Slide after Arrange on the Home tab |
+| `crates/ui-egui/src/theme.rs` (round 6) | `field_border`: text fields, check boxes, radio buttons and framed buttons keep a thin border like Office's |
+| `crates/ui-egui/src/canvas.rs` (round 6) | the object's own entries first in the right-click menu (`deckrt::context_items`) |
+| `crates/ui-egui/src/show.rs` (round 6) | every Next (keys, a click on the slide, a swipe, the Next buttons) asks `deckrt::show::take_next` first, so an object in the click order runs before the show moves on |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -204,39 +211,55 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   the phone's fonts; the deck's slide pictures come from the same phone-sized JPEGs as the
   Slides tab.
 
+- Tidy This Slide only moves shapes placed on the slide; placeholders keep their layout's
+  position. Shapes count as a row when their middles are within 18 pt and their heights within
+  20 %; such a row gets one size (the median), one top and even gaps, and a column the same
+  sideways. A text box up to 60 pt under a shape becomes its caption. Text under 12 pt comes up
+  to its fellow captions' size, or 12 pt. A text box whose text runs over grows when there is
+  room below, else its text is set to shrink.
+- Objects in the click order: `next_clicks` on an object is how many presses of Next it takes
+  after the slide's own animations, before the show moves on; `with_slide` fires it once as the
+  slide opens. Both are in the object's JSON, so PowerPoint keeps them and ignores them.
+- Double-clicking an object in the editor runs the slide's objects in place, through the show's
+  own drawing and pointer code; Esc, a click off the slide or another slide stops them.
+- With one display the show opens alone, as PowerPoint does, except when recording or
+  rehearsing with the coach, which need presenter view's controls.
+- The poll's box is the theme's second dark colour (`dk2`) with `lt1` text, in the file and in
+  the show.
+
 ## PowerPoint feel: next run
 
 Gaps that would keep the app from feeling like PowerPoint, ranked, with a rough size. Sizes:
 small is an afternoon, medium a day or two, large a week.
 
-1. **The ribbon does not shrink to the window.** The Home tab needs about 1600 points; on a
+1. Done (round 6, a More menu rather than PowerPoint's collapsed groups). **The ribbon does not shrink to the window.** The Home tab needs about 1600 points; on a
    1920-pixel laptop at 125% scaling (1536 points) its right end (Find, Replace, Replace Fonts,
    Selection Pane, Design Ideas) is cut off. PowerPoint collapses groups into drop-downs. The
    upstream test `replacefonts_tests::ribbon_button_opens_the_dialog_and_replaces` fails at its
    1400-point window for this reason alone. Large.
-2. **Objects do not play in the editor.** A wipe, scrub, swap, popup and poll show their fallback
+2. Done (round 6). **Objects do not play in the editor.** A wipe, scrub, swap, popup and poll show their fallback
    picture with a badge; only the model is live. PowerPoint plays media in place on a click, and
    the same would do here (a double-click runs the object in the editor). Medium.
-3. **The pane looks like egui, not Office.** Text fields and buttons have no frame until hovered,
+3. Done (round 6). **The pane looks like egui, not Office.** Text fields and buttons have no frame until hovered,
    an unticked box is invisible, and the pane's own Delete is a bare word. Upstream's theme does
    this to every pane; a widget style with frames would change the whole app at once. Medium.
 4. **A PowerPoint model gets no 3D Model tab.** PowerPoint shows a tab with views, pan and zoom
    and reset when a model is selected; here the settings are in the pane and the view is turned
    by the round handle. Medium.
-5. **Objects are outside the animation system.** They cannot be triggered by an animation or a
+5. Partly done (round 6: the click order and with the slide). **Objects are outside the animation system.** They cannot be triggered by an animation or a
    click sequence, only by the presenter, a key or a click on them. Medium.
 6. **The model is turned by a handle in the editor, not by dragging it.** PowerPoint drags the
    model itself and moves it by its frame. A direct drag with the move on the frame would match.
    Small.
 7. **Editor and show disagree on a resized picture.** A swap or scrub picture is fitted inside
    its box in the show but stretched to it in the editor once the box has been resized. Small.
-8. **No context menu entries.** Right-clicking an object gives the shape menu only; PowerPoint
+8. Done (round 6). **No context menu entries.** Right-clicking an object gives the shape menu only; PowerPoint
    would offer the object's own actions (Reset, Replace file, Settings). Small.
-9. **The fallback shapes use fixed colours.** A poll's box is dark blue and a popup's trigger
+9. Done (round 6). **The fallback shapes use fixed colours.** A poll's box is dark blue and a popup's trigger
    accent 1 whatever the theme; PowerPoint content follows the theme. Small.
-10. **Presenter view opens on one display too.** With one display the presenter window opens on
+10. Done (round 6). **Presenter view opens on one display too.** With one display the presenter window opens on
     top of the full-screen show. PowerPoint shows only the slide show there unless asked. Small.
-11. **The show's objects take no touch gestures.** A pinch does not zoom a model and a two-finger
+11. Partly done (round 6: pinch zooms a model). **The show's objects take no touch gestures.** A pinch does not zoom a model and a two-finger
     drag does not pan a zoom region; PowerPoint's show takes touch. Medium.
 12. **No Office file association from the zip.** Only the MSI registers deckrt under Open with.
     Small.

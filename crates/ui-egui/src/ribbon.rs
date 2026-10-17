@@ -227,6 +227,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         cui.spacing_mut().item_spacing.x = 1.0;
         let ui = &mut cui;
         let tab = app.ui.tab.clone();
+        crate::widgets::fit_begin(ui, &tab, inner); // deckrt hook: groups that don't fit go into More
         match tab.as_str() {
             "Home" => home(app, ui),
             "Insert" => insert(app, ui),
@@ -250,6 +251,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             "Notes Master" => notes_master(app, ui),
             _ => {}
         }
+        crate::widgets::fit_end(ui, &tab, inner); // deckrt hook
     });
 }
 
@@ -923,6 +925,7 @@ fn drawing_group(app: &mut SlideApp, ui: &mut Ui) {
         let sel = enabled(app, "shape.fill");
         let r = big_button(ui, Icon::Arrange, "Arrange", sel);
         egui::Popup::menu(&r).show(|ui| arrange_menu(app, ui));
+        crate::deckrt::tidy_button(app, ui); // deckrt hook
         let r = big_button(ui, Icon::QuickStyles, "Quick\nStyles", sel);
         egui::Popup::menu(&r).width(330.0).show(|ui| quick_styles(app, ui));
         rows(ui, |ui| {

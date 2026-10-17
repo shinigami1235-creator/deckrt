@@ -262,7 +262,8 @@ pub fn sync_fallback(sh: &mut Shape, o: &InteractiveObject) {
             sh.kind = ShapeKind::Shape;
             sh.geom = Geom::preset("rect");
             sh.style = None;
-            sh.fill = Some(deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::rgb(deckcraft_color::Rgba::rgb(0x1e, 0x29, 0x3b)) });
+            // The theme's second dark colour, so the box follows the deck's design.
+            sh.fill = Some(deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::scheme(deckcraft_color::SchemeSlot::Dk2) });
             sh.line = Some(deckcraft_model::Line::default());
             let mut text = c.question.clone();
             match c.kind {
@@ -278,7 +279,7 @@ pub fn sync_fallback(sh: &mut Shape, o: &InteractiveObject) {
                 obj::PollKind::FreeText => text.push_str("\nAnswer in a few words"),
             }
             let mut t = TextBody::from_text(&text);
-            let white = deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::rgb(deckcraft_color::Rgba::rgb(0xff, 0xff, 0xff)) };
+            let white = deckcraft_model::Fill::Solid { color: deckcraft_model::ColorRef::scheme(deckcraft_color::SchemeSlot::Lt1) };
             for (i, p) in t.paragraphs.iter_mut().enumerate() {
                 for r in &mut p.runs {
                     r.props.fill = Some(white.clone());

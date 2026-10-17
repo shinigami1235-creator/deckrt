@@ -78,6 +78,8 @@ pub struct State {
     pub pictures: pictures::Pictures,
     /// Blur Area waiting for a drag over a picture.
     pub blur: Option<privacy::BlurTool>,
+    /// The slide's objects running in the editor after a double-click on one.
+    pub playing: Option<canvas::Playing>,
     /// Live captions: settings, the model download.
     pub captions: captions::Prefs,
     /// The last rehearsal with the coach, for its report.
@@ -357,4 +359,58 @@ pub fn update(app: &mut SlideApp, id: u32, o: &obj::InteractiveObject) {
     if let Err(e) = app.session.execute("interactive.update", &json!({"id": id, "object": v})) {
         app.set_status(e.to_string());
     }
+}
+
+/// Home › Tidy Slide: line up, size and space the slide's shapes and fix its text in one step.
+pub fn tidy_button(app: &mut SlideApp, ui: &mut Ui) {
+    let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
+    if crate::widgets::big_button(ui, crate::icons::Icon::AlignObjects, "Tidy\nSlide", en)
+        .on_hover_text("Line up, size and space the shapes, put captions under their shapes, and fix tiny or overflowing text")
+        .clicked()
+    {
+        match app.session.execute("deckrt.tidy", &serde_json::json!({})) {
+            Ok(r) => {
+                let list: Vec<String> = r["changes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+                app.set_status(if list.is_empty() { "Nothing to tidy on this slide.".to_string() } else { format!("{}.", list.join(". ")) });
+            }
+            Err(e) => app.set_status(e.to_string()),
+        }
+        app.drain_requests();
+    }
+}
+
+/// The right-click menu's first entries for a selected object: run it in place, its settings,
+/// and its file.
+pub fn context_items(app: &mut SlideApp, ui: &mut Ui) {
+    let Some(st) = app.session.active() else { return };
+    let Some(sh) = st.selected_shapes().first().copied() else { return };
+    let Some(o) = obj::read_any(sh) else { return };
+    let (id, uid, slide, is_model) = (sh.id.0, st.uid, st.selection.slide, matches!(sh.kind, deckcraft_model::ShapeKind::Model3d { .. }));
+    if is_model {
+        if ui.button("Reset View").clicked() {
+            app.deckrt.models.turns.remove(&id);
+            ui.close();
+        }
+        if ui.button("Replace Model File…").clicked() {
+            ui.close();
+            app.deckrt.picking = true;
+            let path = app.services.pick_open.as_mut().and_then(|p| p("model"));
+            app.deckrt.picking = false;
+            if let Some(path) = path {
+                let _ = app.session.execute("interactive.replaceModel", &serde_json::json!({"id": id, "path": path}));
+                app.deckrt.models.turns.remove(&id);
+                app.drain_requests();
+            }
+        }
+    } else if ui.button("Play on the Slide").clicked() {
+        app.deckrt.playing = Some(canvas::Playing::new(uid, slide));
+        app.set_status("Playing the slide's objects. Esc stops.");
+        ui.close();
+    }
+    let _ = o;
+    if ui.button("Object Settings…").clicked() {
+        app.ui.pane = Some(PANE.into());
+        ui.close();
+    }
+    ui.separator();
 }

@@ -485,6 +485,22 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     }
 
     ui.add_space(8.0);
+    label(ui, "In the click order");
+    let mut n = next.next_clicks;
+    ui.horizontal(|ui| {
+        ui.label("Next runs it");
+        let r = ui.add(egui::DragValue::new(&mut n).range(0..=20).speed(0.1));
+        ui.label(if n == 1 { "time" } else { "times" });
+        if committed(ui, r, &mut n) {
+            next.next_clicks = n;
+            changed = true;
+        }
+    });
+    hint(ui, "Next is the clicker, the arrow keys or a click on the slide. It runs the object after the slide's animations, then goes on to the next slide.");
+    if ui.checkbox(&mut next.with_slide, "Runs when the slide opens").changed() {
+        changed = true;
+    }
+    ui.add_space(8.0);
     if ui.button("Delete").clicked() {
         run(app, "interactive.delete", json!({"id": id}));
         return;

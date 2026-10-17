@@ -1210,6 +1210,7 @@ fn context_menu(app: &mut SlideApp, resp: &egui::Response) {
                 ui.close();
             }
         } else if has_sel {
+            crate::deckrt::context_items(app, ui); // deckrt hook: the object's own actions
             if ui.button("Edit Text").clicked() {
                 let _ = app.run("text.edit", json!({}));
                 ui.close();

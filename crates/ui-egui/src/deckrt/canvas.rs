@@ -17,13 +17,91 @@ fn screen_rect(xf: Xf, x: &deckcraft_geom::Xfrm) -> Rect {
     Rect::from_min_max(xf.to_screen(deckcraft_geom::Point::new(x.x, x.y)), xf.to_screen(deckcraft_geom::Point::new(x.x + x.w, x.y + x.h)))
 }
 
-/// The shapes the canvas draws itself: the live 3D models (the slide texture leaves them out).
+/// The shapes the canvas draws itself: the live 3D models (the slide texture leaves them out),
+/// and while the slide's objects play, the pictures and boxes the show draws itself.
 pub fn live_shapes(app: &SlideApp) -> Vec<deckcraft_model::ShapeId> {
     let Some(st) = app.session.active() else { return vec![] };
     if st.selection.target != deckcraft_engine::Target::Slides {
         return vec![];
     }
-    st.shapes().iter().filter(|s| matches!(s.kind, ShapeKind::Model3d { .. })).map(|s| s.id).collect()
+    let mut v: Vec<deckcraft_model::ShapeId> = st.shapes().iter().filter(|s| matches!(s.kind, ShapeKind::Model3d { .. })).map(|s| s.id).collect();
+    if let Some(p) = &app.deckrt.playing
+        && p.uid == st.uid
+        && p.slide == st.selection.slide
+    {
+        v.extend(super::show::hidden_in_show(&st.doc, st.selection.slide));
+    }
+    v
+}
+
+/// The slide's objects running in the editor, as they do in the show, after a double-click on
+/// one. Esc, a click off the slide or another slide stops them.
+pub struct Playing {
+    uid: u64,
+    slide: usize,
+    ext: super::show::Ext,
+}
+
+impl Playing {
+    pub fn new(uid: u64, slide: usize) -> Playing {
+        Playing { uid, slide, ext: Default::default() }
+    }
+}
+
+/// The slide's box on screen and the show's map for it.
+fn slide_map(xf: Xf, doc: &deckcraft_model::Presentation) -> super::show::Map {
+    let a = xf.to_screen(deckcraft_geom::Point::new(0.0, 0.0));
+    let b = xf.to_screen(deckcraft_geom::Point::new(doc.slide_size.width, doc.slide_size.height));
+    super::show::Map::new(Rect::from_min_max(a, b), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), doc)
+}
+
+/// Pointer input while the objects play: they take every event on the slide.
+fn playing_pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
+    let Some(st) = app.session.active() else { return false };
+    let (uid, slide, doc) = (st.uid, st.selection.slide, st.doc.clone());
+    let Some(mut p) = app.deckrt.playing.take() else { return false };
+    if p.uid != uid || p.slide != slide || st.selection.target != deckcraft_engine::Target::Slides {
+        return false;
+    }
+    let map = slide_map(xf, &doc);
+    let pos = resp.interact_pointer_pos().or(resp.hover_pos());
+    let stop = ui.input(|i| i.key_pressed(egui::Key::Escape))
+        || (ui.input(|i| i.pointer.primary_pressed()) && pos.is_some_and(|q| !map.srect.contains(q)));
+    if stop {
+        app.set_status("");
+        ui.ctx().request_repaint();
+        return true;
+    }
+    let now = ui.input(|i| i.time);
+    let mut zoom = None;
+    super::show::pointer(ui.ctx(), map, &doc, slide, &mut p.ext, &mut zoom, super::show::Role::Audience, now, resp.hovered());
+    app.deckrt.playing = Some(p);
+    ui.ctx().request_repaint();
+    true
+}
+
+/// A double-click on an object other than a model starts the slide's objects playing.
+fn start_playing(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
+    if !resp.hovered() || !ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+        return false;
+    }
+    let Some(p) = resp.interact_pointer_pos().or(resp.hover_pos()) else { return false };
+    let Some(st) = app.session.active() else { return false };
+    if st.selection.target != deckcraft_engine::Target::Slides {
+        return false;
+    }
+    let hit = st.shapes().iter().rev().any(|s| {
+        !s.hidden
+            && obj::read_any(s).is_some_and(|o| !matches!(o.kind(), Kind::Model))
+            && screen_rect(xf, &deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s)).contains(p)
+    });
+    if !hit {
+        return false;
+    }
+    app.deckrt.playing = Some(Playing { uid: st.uid, slide: st.selection.slide, ext: Default::default() });
+    app.set_status("Playing the slide's objects. Esc stops.");
+    ui.ctx().request_repaint();
+    true
 }
 
 /// The selected model's box on screen, when one is selected.
@@ -42,6 +120,12 @@ fn selected_model(app: &SlideApp, xf: Xf) -> Option<(u32, Rect)> {
 /// remembered as the last click. Returns whether the event was consumed.
 pub fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
     if super::privacy::pointer(app, ui, resp, xf) {
+        return true;
+    }
+    if app.deckrt.playing.is_some() {
+        return playing_pointer(app, ui, resp, xf);
+    }
+    if start_playing(app, ui, resp, xf) {
         return true;
     }
     let pos = resp.interact_pointer_pos().or(resp.hover_pos());
@@ -134,6 +218,24 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
             }
         } else {
             badge(painter, rect, &o, &t);
+        }
+    }
+    // The objects playing, over their pictures.
+    if let Some(mut p) = app.deckrt.playing.take() {
+        if let Some(st) = app.session.active()
+            && p.uid == st.uid
+            && p.slide == st.selection.slide
+        {
+            let doc = st.doc.clone();
+            let map = slide_map(xf, &doc);
+            let now = ui.input(|i| i.time);
+            super::show::draw(ui.ctx(), painter, map, &doc, p.slide, &mut p.ext, &mut app.deckrt, super::show::Role::Audience, now);
+            let label = painter.layout_no_wrap("Playing · Esc stops".into(), egui::FontId::proportional(12.0), Color32::WHITE);
+            let r = Rect::from_min_size(map.srect.min + vec2(8.0, 8.0), label.size() + vec2(14.0, 8.0));
+            painter.rect_filled(r, CornerRadius::same(5), Color32::from_rgba_unmultiplied(232, 106, 28, 230));
+            painter.galley(r.min + vec2(7.0, 4.0), label, Color32::WHITE);
+            app.deckrt.playing = Some(p);
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
         }
     }
     super::privacy::draw(app, painter, xf);

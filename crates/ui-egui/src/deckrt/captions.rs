@@ -273,7 +273,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
     ui.set_min_width(460.0);
     ui.set_max_width(520.0);
     let mut changed = false;
-    ui.label("Captions are worked out on this laptop from the microphone. Nothing is sent online.");
+    ui.label("Captions come from the microphone and run on this laptop with no internet.");
     ui.add_space(8.0);
 
     ui.label(RichText::new("Speech model").strong());
@@ -347,7 +347,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         changed = true;
     }
     if !ready {
-        ui.label(RichText::new("Download the model first. It is needed once.").size(12.0).color(Color32::from_gray(140)));
+        ui.label(RichText::new("Download a speech model first.").size(12.0).color(Color32::from_gray(140)));
     }
     if changed {
         prefs.save(dir.as_deref());

@@ -462,7 +462,8 @@ fn keyboard(ctx: &egui::Context, show: &mut Show, doc: &Presentation, now: f64) 
                 ArrowRight | ArrowDown | Space | PageDown | N => {
                     if show.ended {
                         keep = false;
-                    } else {
+                    } else if !crate::deckrt::show::take_next(show, doc, now, ctx) {
+                        // deckrt hook: an object in the click order takes Next first.
                         actions.push(show.state.next(doc));
                     }
                 }
@@ -475,7 +476,8 @@ fn keyboard(ctx: &egui::Context, show: &mut Show, doc: &Presentation, now: f64) 
                         }
                     } else if show.ended {
                         keep = false;
-                    } else {
+                    } else if !crate::deckrt::show::take_next(show, doc, now, ctx) {
+                        // deckrt hook: an object in the click order takes Next first.
                         actions.push(show.state.next(doc));
                     }
                 }
@@ -620,6 +622,9 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             keep = false;
         } else if show.blank.is_some() {
             show.blank = None;
+        } else if crate::deckrt::show::take_next(&mut show, &doc, now, &ctx) {
+            // deckrt hook: a click on the slide is Next, which an object in the click order
+            // takes first.
         } else {
             // A shape with an action or a triggered animation, or the background.
             let none = Under::default();
@@ -645,7 +650,8 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if next {
             if show.ended {
                 keep = false;
-            } else {
+            } else if !crate::deckrt::show::take_next(&mut show, &doc, now, &ctx) {
+                // deckrt hook: an object in the click order takes Next first.
                 actions.push(show.state.next(&doc));
             }
         } else {
@@ -991,7 +997,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if child.button("Close").clicked() {
             keep = false;
         }
-        if child.button("▶").clicked() {
+        if child.button("▶").clicked() && !crate::deckrt::show::take_next(&mut show, &doc, now, &ctx) {
             let a = show.state.next(&doc);
             if !show.apply(a, &doc, now) {
                 keep = false;
@@ -1011,7 +1017,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             let a = show.state.prev(&doc);
             show.apply(a, &doc, now);
         }
-        if b(&mut child, "▶").clicked() {
+        if b(&mut child, "▶").clicked() && !crate::deckrt::show::take_next(&mut show, &doc, now, &ctx) {
             let a = show.state.next(&doc);
             if !show.apply(a, &doc, now) {
                 keep = false;
@@ -1823,7 +1829,8 @@ fn presenter_window(
                         if button(ui, "End Show").clicked() {
                             *keep = false;
                         }
-                        if button(ui, "Next ▶").clicked() {
+                        if button(ui, "Next ▶").clicked() && !crate::deckrt::show::take_next(show, doc, now, ui.ctx()) {
+                            // deckrt hook: an object in the click order takes Next first.
                             actions.push(show.state.next(doc));
                         }
                         if button(ui, "◀ Previous").clicked() {

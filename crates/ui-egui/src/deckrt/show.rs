@@ -105,6 +105,10 @@ pub struct Ext {
     /// Record: asked for when the show starts, then recording.
     pub record_wanted: bool,
     pub record: Option<super::record::Live>,
+    /// Presses of Next each object has taken on this slide.
+    pub next_used: BTreeMap<u32, u32>,
+    /// The slide whose "runs when the slide opens" objects have fired.
+    pub opened: Option<usize>,
     /// Rehearse with Coach: asked for when the show starts, then listening.
     pub coach_wanted: bool,
     pub coach: Option<super::coach::Live>,
@@ -155,6 +159,8 @@ impl Default for Ext {
             captions_tried: false,
             record_wanted: false,
             record: None,
+            next_used: BTreeMap::new(),
+            opened: None,
             coach_wanted: false,
             coach: None,
             pace: None,
@@ -255,6 +261,7 @@ impl Ext {
                 state::clear_unpinned(&mut self.states);
             }
             self.slide = Some(idx);
+            self.next_used.clear();
             self.drag = None;
             self.pointer = None;
             self.ink.clear();
@@ -572,7 +579,7 @@ pub fn draw(
             }
             (TypeState::Poll { open, revealed, votes, texts, ranks, hidden }, Config::Poll(c)) => {
                 let answers = PollAnswers { votes, texts, ranks, hidden };
-                draw_poll(painter, rect, c, *open, *revealed, &answers, role);
+                draw_poll(painter, rect, c, *open, *revealed, &answers, role, poll_bg(doc, idx));
             }
             (TypeState::Measure { preset, handles }, Config::Measure(c)) => {
                 let col = color32(&c.color);
@@ -687,16 +694,16 @@ pub struct PollAnswers<'a> {
 
 /// The poll panel for each kind. The room sees how many have answered while answers are open and
 /// the results after the reveal (Show results); the presenter's own view shows them all along.
-fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, a: &PollAnswers, role: Role) {
+fn draw_poll(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, a: &PollAnswers, role: Role, bg: Color32) {
     match c.kind {
-        PollKind::Choice => draw_choice(painter, rect, c, open, revealed, a.votes, role),
-        kind => draw_typed(painter, rect, c, kind, open, revealed, a, role),
+        PollKind::Choice => draw_choice(painter, rect, c, open, revealed, a.votes, role, bg),
+        kind => draw_typed(painter, rect, c, kind, open, revealed, a, role, bg),
     }
 }
 
 /// The panel's frame and question; returns the area left under the question and the text size.
-fn poll_frame(painter: &egui::Painter, rect: Rect, question: &str, rows: f32) -> (Rect, f32) {
-    painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(0x1e, 0x29, 0x3b));
+fn poll_frame(painter: &egui::Painter, rect: Rect, question: &str, rows: f32, bg: Color32) -> (Rect, f32) {
+    painter.rect_filled(rect, CornerRadius::same(6), bg);
     let pad = (rect.width().min(rect.height()) * 0.06).clamp(6.0, 20.0);
     let inner = rect.shrink(pad);
     let qsize = (inner.height() / (rows + 2.5)).clamp(9.0, 30.0);
@@ -707,10 +714,10 @@ fn poll_frame(painter: &egui::Painter, rect: Rect, question: &str, rows: f32) ->
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_typed(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, kind: PollKind, open: bool, revealed: bool, a: &PollAnswers, role: Role) {
+fn draw_typed(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, kind: PollKind, open: bool, revealed: bool, a: &PollAnswers, role: Role, bg: Color32) {
     let painter = &painter.with_clip_rect(rect);
     let n = poll::answered(a.votes, a.texts, a.ranks);
-    let (area, qsize) = poll_frame(painter, rect, &c.question, 5.0);
+    let (area, qsize) = poll_frame(painter, rect, &c.question, 5.0, bg);
     let small = qsize * 0.8;
     let show = revealed || role == Role::Presenter;
     let status = format!("{}{n} answer{}", if open && !revealed { "Answers open · " } else { "" }, if n == 1 { "" } else { "s" });
@@ -889,11 +896,12 @@ fn draw_cloud(painter: &egui::Painter, area: Rect, words: &[(String, u32)], qsiz
     }
 }
 
-fn draw_choice(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role) {
+#[allow(clippy::too_many_arguments)]
+fn draw_choice(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role, bg: Color32) {
     let counts = poll::tally(c.options.len(), votes);
     let total: u32 = counts.iter().sum();
     let pct = poll::percentages(&counts);
-    painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(0x1e, 0x29, 0x3b));
+    painter.rect_filled(rect, CornerRadius::same(6), bg);
     let pad = (rect.width().min(rect.height()) * 0.06).clamp(6.0, 20.0);
     let inner = rect.shrink(pad);
     let painter = &painter.with_clip_rect(rect);
@@ -1069,9 +1077,11 @@ pub(crate) fn pointer(
     });
     let Some(it) = under else { return false };
     let rect = map.rect(&it.xfrm);
-    // The wheel zooms a model.
-    if scroll.abs() > 0.0 && it.obj.kind() == Kind::Model {
-        ext.zoom_model(it.id, 1.0 + scroll as f64 / 300.0, now);
+    // The wheel and a two-finger pinch on a touch screen zoom a model.
+    let pinch = ctx.input(|i| i.zoom_delta());
+    if it.obj.kind() == Kind::Model && (scroll.abs() > 0.0 || (pinch - 1.0).abs() > 1e-3) {
+        let f = if (pinch - 1.0).abs() > 1e-3 { pinch as f64 } else { 1.0 + scroll as f64 / 300.0 };
+        ext.zoom_model(it.id, f, now);
         ext.took_scroll = true;
         ctx.request_repaint();
     }
@@ -1189,6 +1199,51 @@ pub(crate) fn pointer(
         }
         _ => false,
     }
+}
+
+/// Next was pressed (a key, the clicker, a click on the slide, a Next button). When the slide's
+/// animations are done and an object still has presses of Next to take, it fires and the show
+/// stays on the slide. Returns whether an object took it.
+pub(crate) fn take_next(show: &mut Show, doc: &Presentation, now: f64, ctx: &egui::Context) -> bool {
+    if show.ended || show.grid || show.reading {
+        return false;
+    }
+    let idx = show.state.slide;
+    if show.state.step < deckcraft_anim::ShowState::steps(doc, idx) {
+        return false;
+    }
+    show.ext.sync_slide(doc, idx);
+    for it in objects_on(doc, idx) {
+        let used = show.ext.next_used.get(&it.id).copied().unwrap_or(0);
+        if it.obj.next_clicks > used {
+            show.ext.next_used.insert(it.id, used + 1);
+            show.ext.fire(&mut show.zoom, &it, now, ctx);
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+            return true;
+        }
+    }
+    false
+}
+
+/// Objects set to run as the slide opens, once per visit.
+fn fire_on_open(show: &mut Show, doc: &Presentation, now: f64, ctx: &egui::Context) {
+    let idx = show.state.slide;
+    if show.ended || show.ext.opened == Some(idx) {
+        return;
+    }
+    show.ext.opened = Some(idx);
+    show.ext.sync_slide(doc, idx);
+    for it in objects_on(doc, idx).into_iter().filter(|it| it.obj.with_slide) {
+        show.ext.fire(&mut show.zoom, &it, now, ctx);
+    }
+}
+
+/// A poll's box colour: the theme's second dark colour, as the saved file has it.
+fn poll_bg(doc: &Presentation, idx: usize) -> Color32 {
+    let Some(sl) = doc.slides.get(idx) else { return Color32::from_rgb(0x1e, 0x29, 0x3b) };
+    let Some(ctx) = deckcraft_model::resolve::Ctx::for_slide(doc, sl) else { return Color32::from_rgb(0x1e, 0x29, 0x3b) };
+    let c = ctx.color(&deckcraft_model::ColorRef::scheme(deckcraft_color::SchemeSlot::Dk2), None);
+    Color32::from_rgb(c.r, c.g, c.b)
 }
 
 /// An object's shortcut key, pressed in either window. Returns whether a key was taken.
@@ -1544,7 +1599,14 @@ pub fn place_show(ctx: &egui::Context, show: &mut Show, displays: Vec<DisplayInf
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::SetMonitor(audience));
         }
-        _ => ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true)),
+        _ => {
+            // One screen: the show alone, as PowerPoint does, unless recording or the coach
+            // needs presenter view's controls.
+            if show.ext.displays.len() == 1 && !show.ext.record_wanted && !show.ext.coach_wanted {
+                show.presenter = false;
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true))
+        }
     }
 }
 
@@ -1658,6 +1720,9 @@ use crate::SlideApp;
 pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc<Presentation>, now: f64) {
     let idx = show.state.slide;
     show.ext.sync_slide(doc, idx);
+    if !show.reading && !show.preview_only {
+        fire_on_open(show, doc, now, ctx);
+    }
     show.ext.follow_zoom(&show.zoom);
     if show.presenter && !show.reading && !show.preview_only && show.ext.phones.is_none() && !show.ext.phones_tried {
         show.ext.phones_tried = true;
