@@ -1,6 +1,9 @@
 # Builds deckrt for Windows and uploads it as a zip (and an MSI when WiX cooperates).
 #
 # Download: Actions › Windows build › the run › Artifacts › deckrt-windows-x64.
+# Each push also replaces the release "latest-build" with the installer at a fixed address,
+# https://github.com/shinigami1235-creator/deckrt/releases/latest/download/deckrt-windows-x64.msi,
+# which Update deckrt.bat downloads and runs.
 # The zip holds deckrt.exe, deckcraft-cli.exe, Start deckrt.bat and the licence files. Fonts are
 # embedded in the exe from the craft-fonts repository, so nothing else is needed at run time.
 
@@ -13,7 +16,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write: each push replaces the "latest-build" release that Update deckrt.bat downloads from.
+  contents: write
 
 concurrency:
   group: windows-build-${{ github.ref }}
@@ -165,3 +169,16 @@ jobs:
           name: deckrt-windows-x64-installer
           path: deckrt/dist/msi
           if-no-files-found: ignore
+
+      - name: Publish the installer as the latest-build release
+        if: github.event_name != 'pull_request'
+        working-directory: deckrt
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $msi = Get-ChildItem dist\msi\*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $msi) { Write-Error "No installer was built, so the release is left as it was."; exit 1 }
+          Copy-Item $msi.FullName dist\deckrt-windows-x64.msi
+          gh release delete latest-build --yes --cleanup-tag 2>$null
+          gh release create latest-build dist\deckrt-windows-x64.msi --title "deckrt latest build" --notes "Built from $env:GITHUB_REF_NAME at $env:GITHUB_SHA." --target $env:GITHUB_SHA --latest
