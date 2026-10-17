@@ -1,0 +1,20 @@
+[package]
+name = "deckcraft-video-out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "deckrt's video export: H.264 and AAC in an MP4, through Windows' own Media Foundation encoders"
+
+# Not the workspace lints: `mf.rs` calls Media Foundation's COM interfaces, which needs `unsafe`.
+# Like crates/show-ext, this is one of the two places in the fork that do.
+[lints.rust]
+unsafe_code = "allow"
+
+[dependencies]
+log = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Media_MediaFoundation", "Win32_System_Com"] }
+
+[dev-dependencies]
+deckcraft-media = { workspace = true }
