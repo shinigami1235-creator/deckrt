@@ -19,6 +19,7 @@ deckcraft-engine = { workspace = true }
 deckcraft-ui-egui = { workspace = true, features = ["gpu3d"] }
 deckcraft-show-ext = { workspace = true } # deckrt
 deckcraft-media = { workspace = true }
+deckcraft-model3d = { workspace = true } # deckrt: the model file types the picker offers
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
 egui = { workspace = true }
 serde_json = { workspace = true }

@@ -990,6 +990,7 @@ dependencies = [
  "cpal",
  "deckcraft-engine",
  "deckcraft-media",
+ "deckcraft-model3d",
  "deckcraft-show-ext",
  "deckcraft-ui-egui",
  "eframe",

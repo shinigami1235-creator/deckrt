@@ -103,7 +103,7 @@ fn services() -> Services {
             let d = rfd::FileDialog::new();
             let d = match purpose {
                 "picture" | "pictures" => d.add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"]),
-                "model" => d.add_filter("3D models", &["glb"]), // deckrt
+                "model" => d.add_filter("3D models", &deckcraft_model3d::convert::MODEL_EXTS), // deckrt
                 "audio" => d.add_filter(
                     "Audio",
                     &["wav", "mp3", "m4a", "m4b", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "aifc", "caf", "wma", "weba", "mka"],
@@ -122,7 +122,7 @@ fn services() -> Services {
         // deckrt: several pictures at once, in the order the dialog reports them.
         pick_open_many: Some(Box::new(|purpose: &str| {
             let d = match purpose {
-                "model" => rfd::FileDialog::new().add_filter("3D models", &["glb"]),
+                "model" => rfd::FileDialog::new().add_filter("3D models", &deckcraft_model3d::convert::MODEL_EXTS),
                 _ => rfd::FileDialog::new().add_filter("Pictures", &deckcraft_ui_egui::deckrt::IMAGE_EXTS),
             };
             d.pick_files().map(|v| v.iter().map(|p| p.to_string_lossy().to_string()).collect()).unwrap_or_default()

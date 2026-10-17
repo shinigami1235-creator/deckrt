@@ -131,7 +131,7 @@ pub fn end_frame(app: &mut SlideApp) {
 pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
     group(ui, |ui| {
-        if crate::widgets::big_button(ui, icon(Kind::Model), "3D\nModel", en).on_hover_text("3D model from a .glb file").clicked() {
+        if crate::widgets::big_button(ui, icon(Kind::Model), "3D\nModel", en).on_hover_text("3D model from a .glb, .obj or .stl file").clicked() {
             insert(app, Kind::Model);
         }
         let columns: [[Kind; 3]; 3] = [
@@ -156,7 +156,7 @@ pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
 
 fn tip(k: Kind) -> &'static str {
     match k {
-        Kind::Model => "A 3D model from a .glb file",
+        Kind::Model => "A 3D model from a .glb, .obj or .stl file",
         Kind::ImageSwap => "Pictures shown one at a time: click or press the key for the next",
         Kind::Wipe => "Before and after under one slider",
         Kind::Scrub => "2 to 12 pictures under one slider, each with a label",

@@ -2,6 +2,7 @@
 //!
 //! - [`model`]: the file loaded into triangle lists, materials, textures and node names.
 //! - [`camera`]: the orbit camera.
+//! - [`convert`]: `.obj` and `.stl` files turned into `.glb` when they are inserted.
 //! - [`soft`]: a software rasteriser for posters, thumbnails, PDF export and machines without a
 //!   usable GPU.
 //! - [`gpu`] (feature `gpu`): the wgpu renderer the editor canvas and the slide show use.
@@ -9,6 +10,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod camera;
+pub mod convert;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod model;

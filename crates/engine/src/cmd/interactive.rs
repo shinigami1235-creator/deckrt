@@ -129,6 +129,23 @@ fn add_picture(s: &mut Session, cmd: &str, name: &str, bytes: Vec<u8>) -> Result
     s.edit(|doc, _| doc.add_media(name, ct, bytes).ok_or_else(|| bad(cmd, NO_ID_SPACE)))
 }
 
+/// A model file as `.glb`: an `.obj` or `.stl` is converted (an `.obj`'s `.mtl` and textures are
+/// read from beside `path`), a `.glb` passes through, anything else is refused with a reason.
+fn as_glb(path: Option<&str>, name: String, bytes: Vec<u8>) -> Result<(String, Vec<u8>)> {
+    if is_glb(&bytes) {
+        return Ok((name, bytes));
+    }
+    let dir = path.and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf()));
+    let sibling = |rel: &str| -> Option<Vec<u8>> {
+        let d = dir.as_ref()?;
+        let rel = rel.replace('\\', "/");
+        crate::io::read_file(&d.join(rel).to_string_lossy()).ok()
+    };
+    let glb = deckcraft_model3d::convert::to_glb(&name, &bytes, &sibling)
+        .map_err(|e| EngineError::Other(if e.contains(&name) { e } else { format!("{name}: {e}") }))?;
+    Ok((deckcraft_model3d::convert::glb_name(&name), glb))
+}
+
 fn add_glb(s: &mut Session, cmd: &str, name: &str, bytes: Vec<u8>) -> Result<MediaId> {
     if !is_glb(&bytes) {
         return Err(bad(cmd, format!("{name} is not a .glb model")));
@@ -331,7 +348,9 @@ fn insert(s: &mut Session, p: &Value) -> Result<Value> {
     let mut aspect = None;
     match &mut o.config {
         Config::Model(c) => {
-            let (name, bytes) = files.into_iter().next().ok_or_else(|| bad(cmd, "a 3D model needs a .glb file"))?;
+            let (name, bytes) = files.into_iter().next().ok_or_else(|| bad(cmd, "a 3D model needs a .glb, .obj or .stl file"))?;
+            let path = p.get("paths").and_then(|v| v.get(0)).and_then(Value::as_str).or_else(|| p.get("path").and_then(Value::as_str));
+            let (name, bytes) = as_glb(path, name, bytes)?;
             let layers = deckcraft_interactive::glb::layers(&bytes).map_err(|e| EngineError::Other(format!("{name}: {e}")))?;
             let id = add_glb(s, cmd, &name, bytes)?;
             c.layers = layers;
@@ -539,6 +558,7 @@ fn replace_model(s: &mut Session, p: &Value) -> Result<Value> {
     let (sh, mut o) = object_of(s, id)?;
     let Config::Model(c) = &mut o.config else { return Err(bad(cmd, "not a 3D model")) };
     let (name, bytes) = insert::media_bytes(p, cmd)?;
+    let (name, bytes) = as_glb(p.get("path").and_then(Value::as_str), name, bytes)?;
     let layers = deckcraft_interactive::glb::layers(&bytes).map_err(|e| EngineError::Other(format!("{name}: {e}")))?;
     let glb = add_glb(s, cmd, &name, bytes)?;
     c.layers = layers.clone();
