@@ -432,9 +432,16 @@ pub struct InteractiveObject {
     /// object before the show moves on, after the slide's own animations.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub next_clicks: u32,
-    /// Fired once as the slide opens.
+    /// Fired once as the slide opens, after `delay`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub with_slide: bool,
+    /// Fired once when the slide's own animations have all played, after `delay`, like an
+    /// effect set to After Previous.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_animations: bool,
+    /// Seconds before an object that runs by itself fires.
+    #[serde(default, skip_serializing_if = "is_zero_f")]
+    pub delay: f64,
     #[serde(default)]
     pub anchor: Option<Anchor>,
 }
@@ -448,11 +455,14 @@ fn yes() -> bool {
 fn is_zero(v: &u32) -> bool {
     *v == 0
 }
+fn is_zero_f(v: &f64) -> bool {
+    *v == 0.0
+}
 
 impl InteractiveObject {
     pub fn new(config: Config) -> Self {
         let trigger = if config.kind() == Kind::Measure { Trigger::AudienceClick } else { Trigger::Presenter };
-        InteractiveObject { v: VERSION, config, label: String::new(), trigger, shortcut: None, visible: true, next_clicks: 0, with_slide: false, anchor: None }
+        InteractiveObject { v: VERSION, config, label: String::new(), trigger, shortcut: None, visible: true, next_clicks: 0, with_slide: false, after_animations: false, delay: 0.0, anchor: None }
     }
 
     pub fn kind(&self) -> Kind {

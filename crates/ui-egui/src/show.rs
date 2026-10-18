@@ -1569,6 +1569,23 @@ impl Zoom {
     fn uv(self) -> Rect {
         zoom_uv(self.nx, self.ny, self.scale)
     }
+
+    /// deckrt hook: two fingers on a touch screen. `(dx, dy)` is the drag as a share of the
+    /// screen, `factor` the pinch. Returns false when pinched back out to the whole slide.
+    pub(crate) fn touch(&mut self, dx: f32, dy: f32, factor: f32) -> bool {
+        let f = if factor.is_finite() && factor > 0.0 { factor } else { 1.0 };
+        self.scale = (self.scale * f).min(20.0);
+        if !(self.scale > 1.02) {
+            return false;
+        }
+        let w = 1.0 / self.scale;
+        let (dx, dy) = (if dx.is_finite() { dx } else { 0.0 }, if dy.is_finite() { dy } else { 0.0 });
+        // Keep the window inside the slide, as `zoom_uv` draws it.
+        let half = w * 0.5;
+        self.nx = (self.nx - dx * w).clamp(half, 1.0 - half);
+        self.ny = (self.ny - dy * w).clamp(half, 1.0 - half);
+        true
+    }
 }
 
 fn finite_unit(n: f32) -> f32 {
@@ -1950,6 +1967,19 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::*;
+
+    /// deckrt: two fingers pan a zoomed slide inside its edges, and pinching out ends the zoom.
+    #[test]
+    fn two_fingers_pan_and_pinch_the_zoom() {
+        let mut z = Zoom::region(0.5, 0.5, 2.0);
+        assert!(z.touch(0.2, 0.0, 1.0));
+        assert!((z.nx - 0.4).abs() < 1e-6, "dragging right moves the view left by the zoomed share: {}", z.nx);
+        assert!(z.touch(-5.0, -5.0, 1.0));
+        assert!(z.nx <= 0.75 + 1e-6 && z.ny <= 0.75 + 1e-6, "the view stays on the slide");
+        assert!(z.touch(0.0, 0.0, 2.0));
+        assert!((z.scale - 4.0).abs() < 1e-6);
+        assert!(!z.touch(0.0, 0.0, 0.2), "pinched back out");
+    }
 
     /// Send real egui key events to the presenter UI, without the audience window's handler.
     #[test]

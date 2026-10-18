@@ -497,8 +497,28 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         }
     });
     hint(ui, "Next is the clicker, the arrow keys or a click on the slide. It runs the object after the slide's animations, then goes on to the next slide.");
-    if ui.checkbox(&mut next.with_slide, "Runs when the slide opens").changed() {
-        changed = true;
+    label(ui, "Runs by itself");
+    let mode = if next.after_animations { 2 } else if next.with_slide { 1 } else { 0 };
+    ui.horizontal_wrapped(|ui| {
+        for (m, name) in [(0, "No"), (1, "When the slide opens"), (2, "After the slide's animations")] {
+            if ui.selectable_label(mode == m, name).clicked() && mode != m {
+                next.with_slide = m == 1;
+                next.after_animations = m == 2;
+                changed = true;
+            }
+        }
+    });
+    if mode != 0 {
+        let mut d = next.delay;
+        ui.horizontal(|ui| {
+            ui.label("Wait");
+            let r = ui.add(egui::DragValue::new(&mut d).range(0.0..=600.0).speed(0.1).max_decimals(1).suffix(" s"));
+            ui.label("first");
+            if committed(ui, r, &mut d) {
+                next.delay = d;
+                changed = true;
+            }
+        });
     }
     ui.add_space(8.0);
     if ui.button("Delete").clicked() {

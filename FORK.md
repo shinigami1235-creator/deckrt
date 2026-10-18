@@ -218,8 +218,14 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   to its fellow captions' size, or 12 pt. A text box whose text runs over grows when there is
   room below, else its text is set to shrink.
 - Objects in the click order: `next_clicks` on an object is how many presses of Next it takes
-  after the slide's own animations, before the show moves on; `with_slide` fires it once as the
-  slide opens. Both are in the object's JSON, so PowerPoint keeps them and ignores them.
+  after the slide's own animations, before the show moves on. An object can also run by itself:
+  `with_slide` (as the slide opens, like With Previous on the first effect) or
+  `after_animations` (once the slide's animations have played, like After Previous), each after
+  `delay` seconds, once per visit to the slide. All are in the object's JSON, so PowerPoint
+  keeps them and ignores them.
+- Touch in the show: two fingers on the slide pinch it in (from where they started) and back
+  out, and drag the zoomed view, kept inside the slide (`Zoom::touch`, a hook in
+  `crates/ui-egui/src/show.rs`). Over a 3D model the pinch zooms the model instead.
 - Double-clicking an object in the editor runs the slide's objects in place, through the show's
   own drawing and pointer code; Esc, a click off the slide or another slide stops them.
 - With one display the show opens alone, as PowerPoint does, except when recording or
@@ -246,7 +252,7 @@ small is an afternoon, medium a day or two, large a week.
 4. **A PowerPoint model gets no 3D Model tab.** PowerPoint shows a tab with views, pan and zoom
    and reset when a model is selected; here the settings are in the pane and the view is turned
    by the round handle. Medium.
-5. Partly done (round 6: the click order and with the slide). **Objects are outside the animation system.** They cannot be triggered by an animation or a
+5. Done (round 6 and 7: the click order, with the slide, after the animations, delays). **Objects are outside the animation system.** They cannot be triggered by an animation or a
    click sequence, only by the presenter, a key or a click on them. Medium.
 6. **The model is turned by a handle in the editor, not by dragging it.** PowerPoint drags the
    model itself and moves it by its frame. A direct drag with the move on the frame would match.
@@ -259,7 +265,7 @@ small is an afternoon, medium a day or two, large a week.
    accent 1 whatever the theme; PowerPoint content follows the theme. Small.
 10. Done (round 6). **Presenter view opens on one display too.** With one display the presenter window opens on
     top of the full-screen show. PowerPoint shows only the slide show there unless asked. Small.
-11. Partly done (round 6: pinch zooms a model). **The show's objects take no touch gestures.** A pinch does not zoom a model and a two-finger
+11. Done (round 6 and 7: pinch zooms a model; two fingers pinch and pan the slide). **The show's objects take no touch gestures.** A pinch does not zoom a model and a two-finger
     drag does not pan a zoom region; PowerPoint's show takes touch. Medium.
 12. **No Office file association from the zip.** Only the MSI registers deckrt under Open with.
     Small.

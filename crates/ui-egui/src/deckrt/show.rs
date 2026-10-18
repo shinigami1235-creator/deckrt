@@ -107,8 +107,12 @@ pub struct Ext {
     pub record: Option<super::record::Live>,
     /// Presses of Next each object has taken on this slide.
     pub next_used: BTreeMap<u32, u32>,
-    /// The slide whose "runs when the slide opens" objects have fired.
+    /// The slide the objects that run by themselves are timed on, when it opened, when its
+    /// animations finished, and which have fired this visit.
     pub opened: Option<usize>,
+    pub opened_at: f64,
+    pub anims_done_at: Option<f64>,
+    pub auto_fired: std::collections::BTreeSet<u32>,
     /// Rehearse with Coach: asked for when the show starts, then listening.
     pub coach_wanted: bool,
     pub coach: Option<super::coach::Live>,
@@ -161,6 +165,9 @@ impl Default for Ext {
             record: None,
             next_used: BTreeMap::new(),
             opened: None,
+            opened_at: 0.0,
+            anims_done_at: None,
+            auto_fired: Default::default(),
             coach_wanted: false,
             coach: None,
             pace: None,
@@ -1225,16 +1232,48 @@ pub(crate) fn take_next(show: &mut Show, doc: &Presentation, now: f64, ctx: &egu
     false
 }
 
-/// Objects set to run as the slide opens, once per visit.
+/// Objects that run by themselves: when the slide opens or when its animations have played,
+/// each after its delay, once per visit.
 fn fire_on_open(show: &mut Show, doc: &Presentation, now: f64, ctx: &egui::Context) {
     let idx = show.state.slide;
-    if show.ended || show.ext.opened == Some(idx) {
+    if show.ended {
         return;
     }
-    show.ext.opened = Some(idx);
+    if show.ext.opened != Some(idx) {
+        show.ext.opened = Some(idx);
+        show.ext.opened_at = now;
+        show.ext.anims_done_at = None;
+        show.ext.auto_fired.clear();
+    }
+    let done = show.state.step >= deckcraft_anim::ShowState::steps(doc, idx) && !show.state.playing;
+    if done && show.ext.anims_done_at.is_none() {
+        show.ext.anims_done_at = Some(now);
+    }
     show.ext.sync_slide(doc, idx);
-    for it in objects_on(doc, idx).into_iter().filter(|it| it.obj.with_slide) {
-        show.ext.fire(&mut show.zoom, &it, now, ctx);
+    let mut waiting = false;
+    for it in objects_on(doc, idx) {
+        if show.ext.auto_fired.contains(&it.id) {
+            continue;
+        }
+        let start = if it.obj.after_animations {
+            show.ext.anims_done_at
+        } else if it.obj.with_slide {
+            Some(show.ext.opened_at)
+        } else {
+            continue;
+        };
+        let delay = if it.obj.delay.is_finite() { it.obj.delay.clamp(0.0, 3600.0) } else { 0.0 };
+        match start {
+            Some(t0) if now - t0 >= delay => {
+                show.ext.auto_fired.insert(it.id);
+                show.ext.fire(&mut show.zoom, &it, now, ctx);
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
+            _ => waiting = true,
+        }
+    }
+    if waiting {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
     }
 }
 
@@ -1779,6 +1818,32 @@ pub fn audience_pointer(show: &mut Show, ctx: &egui::Context, srect: Rect, doc: 
     let hovered = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|p| srect.contains(p));
     let map = Map::new(srect, show.zoom_uv(), doc);
     let idx = show.state.slide;
+    // Two fingers on a touch screen: a pinch zooms the slide in and out and a drag moves the
+    // zoomed view. Over a 3D model the pinch zooms the model instead (in `pointer`).
+    if let Some(mt) = ctx.multi_touch()
+        && mt.num_touches >= 2
+        && srect.contains(mt.start_pos)
+    {
+        let over_model = objects_on(doc, idx).iter().any(|it| it.obj.kind() == Kind::Model && map.rect(&it.xfrm).contains(mt.start_pos));
+        if !over_model {
+            let (dx, dy) = (mt.translation_delta.x / srect.width().max(1.0), mt.translation_delta.y / srect.height().max(1.0));
+            match show.zoom.as_mut() {
+                Some(z) => {
+                    if !z.touch(dx, dy, mt.zoom_delta) {
+                        show.zoom = None;
+                    }
+                }
+                None if mt.zoom_delta > 1.01 => {
+                    let (ux, uy) = map.to_unit(mt.start_pos);
+                    show.zoom = Some(crate::show::Zoom::region(ux, uy, mt.zoom_delta.max(1.05)));
+                }
+                None => {}
+            }
+            show.ext.took_scroll = true;
+            ctx.request_repaint();
+            return true;
+        }
+    }
     pointer(ctx, map, doc, idx, &mut show.ext, &mut show.zoom, Role::Audience, now, hovered)
 }
 
@@ -1919,6 +1984,41 @@ mod tests {
         assert!(open);
         assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::Q, egui::Modifiers::NONE, 0.0, &ctx));
         assert!(!shortcut(&mut ext, &mut zoom, &doc, 1, egui::Key::P, egui::Modifiers::COMMAND, 0.0, &ctx));
+    }
+
+    #[test]
+    fn next_runs_an_object_in_the_click_order_then_moves_on() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"next_clicks": 2}})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut show = Show::new(&doc, 1, false, false);
+        let ctx = egui::Context::default();
+        let open = |show: &Show| show.ext.states.values().any(|s| matches!(s.st, TypeState::Popup { open: true }));
+        assert!(take_next(&mut show, &doc, 0.0, &ctx));
+        assert!(open(&show));
+        assert!(take_next(&mut show, &doc, 0.1, &ctx));
+        assert!(!open(&show), "the second Next closes it again");
+        assert!(!take_next(&mut show, &doc, 0.2, &ctx), "the third Next is the show's");
+    }
+
+    #[test]
+    fn an_object_runs_by_itself_after_its_delay() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"with_slide": true, "delay": 2.0}})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut show = Show::new(&doc, 1, false, false);
+        let ctx = egui::Context::default();
+        let open = |show: &Show| show.ext.states.values().any(|s| matches!(s.st, TypeState::Popup { open: true }));
+        fire_on_open(&mut show, &doc, 10.0, &ctx);
+        assert!(!open(&show));
+        fire_on_open(&mut show, &doc, 11.0, &ctx);
+        assert!(!open(&show));
+        fire_on_open(&mut show, &doc, 12.1, &ctx);
+        assert!(open(&show), "two seconds after the slide opened");
+        fire_on_open(&mut show, &doc, 20.0, &ctx);
+        assert!(open(&show), "once per visit, so it isn't toggled shut");
     }
 
     #[test]
