@@ -4,10 +4,11 @@
 # Each push to main replaces the pre-release "latest-build" with a test build of the installer,
 # https://github.com/shinigami1235-creator/deckrt/releases/download/latest-build/deckrt-windows-x64.msi,
 # which Update deckrt.bat downloads and runs.
-# Pushing a tag such as deckrt-v0.2.0 makes the numbered release "deckrt 0.2.0" instead, with its notes
-# taken from the "## 0.2.0" section of CHANGELOG.md. It becomes the release GitHub marks Latest, so
+# When the version in Cargo.toml has no release yet, the push also makes the numbered release
+# "deckrt <version>" with the tag deckrt-v<version>, its notes taken from the "## <version>"
+# section of CHANGELOG.md. It becomes the release GitHub marks Latest, so
 # https://github.com/shinigami1235-creator/deckrt/releases/latest/download/deckrt-windows-x64.msi
-# is always the newest numbered version. The tag has to match the version in Cargo.toml.
+# is always the newest numbered version.
 # The zip holds deckrt.exe, deckcraft-cli.exe, Start deckrt.bat and the licence files. Fonts are
 # embedded in the exe from the craft-fonts repository, so nothing else is needed at run time.
 
@@ -16,7 +17,6 @@ name: Windows build
 on:
   push:
     branches: [main, wip/fable-partial]
-    tags: ['deckrt-v*']
   pull_request:
   workflow_dispatch:
 
@@ -69,10 +69,17 @@ jobs:
       - name: Version
         working-directory: deckrt
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            if ($env:GITHUB_REF_NAME -ne "deckrt-v$version") { Write-Output "::error::The tag is $env:GITHUB_REF_NAME while Cargo.toml says $version."; exit 1 }
+          gh release view "deckrt-v$version" --json tagName 2>$null | Out-Null
+          $new = ($LASTEXITCODE -ne 0) -and ($env:GITHUB_EVENT_NAME -eq 'push') -and ($env:GITHUB_REF -eq 'refs/heads/main')
+          $global:LASTEXITCODE = 0
+          "DECKRT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ($new) {
+            Write-Output "deckrt $version has no release yet, so this build becomes it."
+            "DECKRT_NEW_VERSION=1" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
             "DECKCRAFT_BUILD_SHA=$env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_ENV -Append
             "DECKCRAFT_BUILD_DATE=$(Get-Date -Format yyyy-MM-dd)" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -209,7 +216,7 @@ jobs:
           gh release create latest-build dist\deckrt-windows-x64.msi --title "deckrt test build" --notes "The newest test build, from main at $env:GITHUB_SHA. It changes with every push. For a version that stays the same, download the release marked Latest." --target $env:GITHUB_SHA --prerelease --latest=false
 
       - name: Publish the numbered version
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+        if: env.DECKRT_NEW_VERSION == '1'
         working-directory: deckrt
         shell: pwsh
         env:
@@ -217,7 +224,7 @@ jobs:
         run: |
           $msi = Get-ChildItem dist\msi\*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $msi) { Write-Error "No installer was built, so no release was made."; exit 1 }
-          $version = $env:GITHUB_REF_NAME -replace '^deckrt-v', ''
+          $version = $env:DECKRT_VERSION
           # The notes are the CHANGELOG.md section headed "## <version>".
           $notes = @(); $inside = $false
           foreach ($line in Get-Content CHANGELOG.md -Encoding utf8) {
@@ -227,4 +234,4 @@ jobs:
           if ($notes.Count -eq 0) { Write-Output "::error::CHANGELOG.md has no section headed ## $version."; exit 1 }
           $notes -join "`n" | Out-File -FilePath dist\notes.md -Encoding utf8
           Copy-Item $msi.FullName dist\deckrt-windows-x64.msi
-          gh release create $env:GITHUB_REF_NAME $msi.FullName dist\deckrt-windows-x64.msi --title "deckrt $version" --notes-file dist\notes.md --verify-tag --latest
+          gh release create "deckrt-v$version" $msi.FullName dist\deckrt-windows-x64.msi --title "deckrt $version" --notes-file dist\notes.md --target $env:GITHUB_SHA --latest

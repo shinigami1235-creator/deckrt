@@ -114,10 +114,10 @@ backend by hand.
 
 ## Making a version
 
-The version number is in `Cargo.toml` (`cargo xtask version set 0.2.0`). Add a `## 0.2.0`
-section to CHANGELOG.md, commit, then push the tag `deckrt-v0.2.0`. The Windows build makes the release
-"deckrt 0.2.0" with the installer and the changelog section as its notes, and the Download link
-above points to it from then on. Every push to main replaces the test build.
+Set the new number with `cargo xtask version set 0.2.0`, add a `## 0.2.0` section to
+CHANGELOG.md and push to main. The Windows build sees that 0.2.0 has no release yet and makes
+"deckrt 0.2.0" with the installer and that section as its notes, and the Download link above
+points to it from then on. Every push to main also replaces the test build.
 
 ## Tests
 
