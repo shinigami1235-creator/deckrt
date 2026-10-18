@@ -232,6 +232,12 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   rehearsing with the coach, which need presenter view's controls.
 - The poll's box is the theme's second dark colour (`dk2`) with `lt1` text, in the file and in
   the show.
+- Versions: deckrt numbers its own versions from 0.1.0 (the workspace version was upstream's
+  0.7.0 until then). A tag `deckrt-v<version>` (DeckCraft's own tags are `v…`) matching Cargo.toml makes a numbered release marked
+  Latest, with the installer under its own name and as `deckrt-windows-x64.msi`, and the notes
+  from that version's CHANGELOG.md section. Pushes to main make the `latest-build` pre-release,
+  which `Update deckrt.bat` installs; its Help › About line carries the commit and date. The
+  MSI's MajorUpgrade allows downgrades, so the two can be installed over each other.
 
 ## PowerPoint feel: next run
 

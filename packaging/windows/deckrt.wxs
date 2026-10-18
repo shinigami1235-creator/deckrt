@@ -3,7 +3,7 @@
   deckrt MSI (WiX Toolset v5: `dotnet tool install -g wix`). Built by .github/workflows/windows-build.yml:
 
     wix build deckrt.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
-        -d Version=0.7.0 -d BinDir=... -d IconPath=... -d StartBat=... -d LicenseRtf=license.rtf -o out.msi
+        -d Version=0.1.0 -d BinDir=... -d IconPath=... -d StartBat=... -d LicenseRtf=license.rtf -o out.msi
 
   Per-machine install into Program Files, a Start Menu and a desktop shortcut, a Finish page
   that can start deckrt, and deckrt offered under
@@ -23,8 +23,9 @@
       Compressed="yes"
       Language="1033">
     <SummaryInformation Description="deckrt presentations with interactive objects" Manufacturer="deckrt" />
-    <MajorUpgrade AllowSameVersionUpgrades="yes"
-        DowngradeErrorMessage="A newer version of deckrt is already installed." />
+    <!-- Any deckrt replaces any other, so a test build and a numbered version can be installed
+         over each other in either order (builds before 0.1.0 were numbered 0.7.0). -->
+    <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="DeckrtIcon.ico" SourceFile="$(var.IconPath)" />
