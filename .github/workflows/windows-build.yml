@@ -229,7 +229,10 @@ jobs:
           $notes = @(); $inside = $false
           foreach ($line in Get-Content CHANGELOG.md -Encoding utf8) {
             if ($line -match '^## ') { if ($inside) { break }; $inside = ($line -match "^## $([regex]::Escape($version))\b") ; continue }
-            if ($inside) { $notes += $line }
+            # A line indented under a bullet joins it, since GitHub shows each line break.
+            if ($inside) {
+              if ($line -match '^  \S' -and $notes.Count -gt 0 -and $notes[-1].Trim()) { $notes[-1] += ' ' + $line.Trim() } else { $notes += $line }
+            }
           }
           if ($notes.Count -eq 0) { Write-Output "::error::CHANGELOG.md has no section headed ## $version."; exit 1 }
           $notes -join "`n" | Out-File -FilePath dist\notes.md -Encoding utf8
