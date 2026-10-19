@@ -2042,20 +2042,10 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
         "smartart" => {
             ui.label("Pick a graphic; type one item per line.");
             let kind = d.get("kind", "process");
-            ui.horizontal_wrapped(|ui| {
-                for (k, l) in [
-                    ("list", "Basic List"),
-                    ("process", "Basic Process"),
-                    ("cycle", "Basic Cycle"),
-                    ("hierarchy", "Hierarchy"),
-                    ("pyramid", "Pyramid"),
-                    ("matrix", "Matrix"),
-                ] {
-                    if ui.selectable_label(kind == k, l).clicked() {
-                        d.fields.insert("kind".into(), k.into());
-                    }
-                }
-            });
+            // deckrt hook: every layout as a picture, by category.
+            if let Some(k) = crate::deckrt::insert_previews::smartart_picker(app, ui, &kind) {
+                d.fields.insert("kind".into(), k.into());
+            }
             let mut v = d.get("text", "Plan\nBuild\nLaunch");
             ui.add(egui::TextEdit::multiline(&mut v).desired_rows(5).desired_width(320.0));
             d.fields.insert("text".into(), v.clone());

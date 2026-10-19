@@ -419,29 +419,7 @@ fn format_shape(app: &mut SlideApp, ui: &mut Ui) {
                 }
             });
         }
-        "picture" => {
-            let adj = if let ShapeKind::Picture { fill } = &sh.kind { fill.adjust.clone() } else { Default::default() };
-            let mut b = adj.brightness as f32;
-            if ui.add(egui::Slider::new(&mut b, -1.0..=1.0).text("Brightness")).drag_stopped() {
-                run(app, "picture.adjust", json!({"brightness": b}));
-            }
-            let mut c = adj.contrast as f32;
-            if ui.add(egui::Slider::new(&mut c, -1.0..=1.0).text("Contrast")).drag_stopped() {
-                run(app, "picture.adjust", json!({"contrast": c}));
-            }
-            let mut s = adj.saturation.unwrap_or(1.0) as f32;
-            if ui.add(egui::Slider::new(&mut s, 0.0..=4.0).text("Saturation")).drag_stopped() {
-                run(app, "picture.adjust", json!({"saturation": s}));
-            }
-            let alpha = if let ShapeKind::Picture { fill } = &sh.kind { fill.alpha.unwrap_or(1.0) } else { 1.0 };
-            let mut tr = (1.0 - alpha) as f32;
-            if ui.add(egui::Slider::new(&mut tr, 0.0..=1.0).text("Transparency")).drag_stopped() {
-                run(app, "picture.adjust", json!({"transparency": tr}));
-            }
-            if ui.button("Reset Picture").clicked() {
-                run(app, "picture.reset", json!({}));
-            }
-        }
+        "picture" => crate::deckrt::format_picture::pane(app, ui), // deckrt hook: live sliders with number boxes
         _ => {
             // Fill & Line.
             ui.label(egui::RichText::new("Fill").font(theme::bold(13.0)));

@@ -119,6 +119,14 @@ fn selected_model(app: &SlideApp, xf: Xf) -> Option<(u32, Rect)> {
 /// handle orbits it, the wheel over a selected model zooms it. Every primary press is
 /// remembered as the last click. Returns whether the event was consumed.
 pub fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
+    // A click on the canvas ends a transition preview, then selects as usual.
+    if super::preview::active(app) {
+        if resp.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
+            super::preview::stop(app);
+        } else {
+            return true;
+        }
+    }
     if super::privacy::pointer(app, ui, resp, xf) {
         return true;
     }
@@ -180,6 +188,10 @@ pub fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bo
 
 /// Draw the objects of the current slide over the slide texture.
 pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
+    if super::preview::active(app) {
+        super::preview::draw(app, ui, painter, xf);
+        return;
+    }
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else { return };
     if st.selection.target != deckcraft_engine::Target::Slides {

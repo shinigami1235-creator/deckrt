@@ -5,14 +5,14 @@ edition.workspace = true
 license.workspace = true
 description = "deckrt's slide show extras that need the platform: the connected displays, so the show goes to the projector and the presenter window stays on the laptop"
 
-# Not the workspace lints: `displays.rs` calls EnumDisplayMonitors on Windows, which needs `unsafe`
-# (the one place in the fork that does). The rest of the workspace forbids it.
+# Not the workspace lints: `displays.rs` and `capture.rs` call Windows APIs, which needs `unsafe`. The rest of the workspace forbids it.
 [lints.rust]
 unsafe_code = "allow"
 
 [dependencies]
 log = { workspace = true }
 
-# The connected displays through EnumDisplayMonitors, in the order winit lists them.
+# The connected displays through EnumDisplayMonitors, in the order winit lists them, and the
+# window and screen pictures for Insert › Screenshot (PrintWindow, BitBlt).
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_HiDpi"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_Xps", "Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }

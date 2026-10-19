@@ -109,7 +109,8 @@ pub fn blip_fill(w: &mut W, x: &mut Exp, o: &mut Out, tag: &str, pf: &PictureFil
         || adj.clear_color.is_some()
         || adj.bilevel.is_some()
         || adj.alpha_inv
-        || pf.artistic.is_some();
+        || pf.artistic.is_some()
+        || crate::deckrt::saturation_of(adj).is_some(); // deckrt hook
     let a = if linked { A::new().a("r:link", &rid) } else { A::new().a("r:embed", &rid) };
     if has_kids {
         w.open("a:blip", a);
@@ -146,9 +147,14 @@ pub fn blip_fill(w: &mut W, x: &mut Exp, o: &mut Out, tag: &str, pf: &PictureFil
         }
         // Artistic effect: the blip is the processed picture; the original rides in an
         // `a14:imgLayer` with the effect's name, as PowerPoint writes it.
-        if let Some(art) = &pf.artistic
-            && art.effect.starts_with("artistic")
-            && art.effect.chars().all(|c| c.is_ascii_alphanumeric())
+        let artistic = pf.artistic.as_ref().filter(|art| art.effect.starts_with("artistic") && art.effect.chars().all(|c| c.is_ascii_alphanumeric()));
+        if artistic.is_none()
+            && let Some(sat) = crate::deckrt::saturation_of(adj)
+            && !linked
+        {
+            crate::deckrt::write_saturation(w, &rid, sat); // deckrt hook: saturation over the picture itself
+        }
+        if let Some(art) = artistic
             && let Some(orig) = x.media_rel(o, art.original, "image")
         {
             w.open0("a:extLst");

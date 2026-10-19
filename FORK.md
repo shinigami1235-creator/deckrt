@@ -36,6 +36,13 @@ current) does not apply here.
 | `crates/engine/src/cmd/deckrt_tidy.rs` | `deckrt.tidy`: Tidy This Slide, worked out on a copy of the slide and applied as one undo step |
 | `crates/ui-egui/src/deckrt/check.rs`, `privacy.rs`, `captions.rs`, `questions.rs` | Their windows and buttons; Blur Area's drag; the caption band; questions from phones |
 | `crates/engine/tests/deckrt_roundtrip.rs`, `crates/pptx/tests/deckrt_tags.rs` | Round trips of every object through .pptx and .deckcraft, the ecm sidecar migration, the tag media relationships |
+| `crates/ui-egui/src/deckrt/format_picture.rs`, `crates/engine/src/cmd/deckrt_live.rs` | Live sliders with number boxes (picture corrections, colour, transparency, crop; shape fill transparency); a drag runs its command at every step inside one undo step |
+| `crates/pptx/src/deckrt.rs` | Picture saturation in the file (`a14:saturation` on an `a14:imgLayer`) |
+| `crates/ui-egui/src/deckrt/notes.rs`, `prefs.rs` | Presenter view's notes panel, dividers and Hide next slide; settings kept in `<settings>/deckrt-prefs.json` |
+| `crates/ui-egui/src/deckrt/preview.rs` | Transition preview on the editor canvas, AutoPreview, gallery tiles that play their effect under the pointer |
+| `crates/ui-egui/src/deckrt/insert_previews.rs` | Pictures in the Chart, Change Chart Type, WordArt and Action menus (drawn from a scratch deck with the open deck's theme) and the SmartArt dialog |
+| `crates/show-ext/src/capture.rs`, `crates/ui-egui/src/deckrt/screenshot.rs` | Insert › Screenshot: window pictures (`PrintWindow`), the screen (`BitBlt`, deckrt's windows left out with `WDA_EXCLUDEFROMCAPTURE`), Screen Clipping's window; `DECKRT_SCREEN_TEST=<png>` stands in for the screen |
+| `packaging/sample/`, `assets/sample/deckrt-feature-tour.pptx`, `crates/engine/src/cmd/deckrt_sample.rs` | The sample deck: drawn pictures and model, the build script, the deck embedded in the program and opened by `deckrt.openSample` |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
 
 ## How objects are stored
@@ -120,6 +127,15 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/theme.rs` (round 6) | `field_border`: text fields, check boxes, radio buttons and framed buttons keep a thin border like Office's |
 | `crates/ui-egui/src/canvas.rs` (round 6) | the object's own entries first in the right-click menu (`deckrt::context_items`) |
 | `crates/ui-egui/src/show.rs` (round 6) | every Next (keys, a click on the slide, a swipe, the Next buttons) asks `deckrt::show::take_next` first, so an object in the click order runs before the show moves on |
+| `crates/engine/src/cmd/mod.rs` (round 8) | `pub mod deckrt_live; pub mod deckrt_sample;` and the sample's `specs()` |
+| `crates/pptx/src/lib.rs`, `read/dml.rs`, `write/dml.rs` (round 8) | `mod deckrt;`; a picture's saturation is read from and written to its image layer (upstream lost it on save) |
+| `crates/ui-egui/src/panes.rs` (round 8) | Format Shape › Picture is `deckrt::format_picture::pane` |
+| `crates/ui-egui/src/ribbon.rs` (round 8) | Picture Format's Corrections, Color and Transparency menus; the Shape Fill menus' transparency slider; Transitions › Preview plays on the canvas with AutoPreview under its arrow; Animations › Preview's arrow; picking an effect calls `deckrt::preview::auto_*`; `paint_transition_tile` and `paint_anim_tile` let a hovered tile play; Insert's Screenshot, Chart, WordArt and Action menus and Change Chart Type are deckrt's |
+| `crates/ui-egui/src/dialogs.rs` (round 8) | the SmartArt dialog picks its layout from pictures |
+| `crates/ui-egui/src/canvas.rs` (round 8) | no selection handles over a transition preview |
+| `crates/ui-egui/src/show.rs` (round 8) | presenter view's columns come from `deckrt::notes::columns` and its right column from `deckrt::notes::right_column`; `notes_px` is `pub(crate)` and `NOTES_MAX` is 72; `state_for`, `quad_mesh` and `part_textures` are `pub(crate)` for the canvas preview; `next_rect` is kept for its test |
+| `crates/ui-egui/src/lib.rs` (round 8) | `deckrt::screenshot::frame` each frame for Screen Clipping's window |
+| `crates/ui-egui/src/backstage.rs` (round 8) | the sample deck's tile on File › New |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -240,6 +256,29 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   can't push tags. Pushes to main make the `latest-build` pre-release,
   which `Update deckrt.bat` installs; its Help › About line carries the commit and date. The
   MSI's MajorUpgrade allows downgrades, so the two can be installed over each other.
+
+- Live sliders: a drag starts an engine interaction named `deckrt-live:<label>` (the canvas's
+  drags use the same mechanism), runs the command at every step and ends it on release, so the
+  slide changes while dragging and Undo takes the whole drag back. A drag whose slider disappears
+  is ended at the end of the frame.
+- Saturation is written as PowerPoint 2010 writes it, an `a14:saturation` effect on an
+  `a14:imgLayer`, but over the same picture the blip shows (deckrt applies it when drawing).
+  PowerPoint shows such a picture unsaturated until it is edited there. A layer that is a
+  different image (PowerPoint bakes the effect into the blip) isn't read back, so it isn't applied
+  twice.
+- Transitions › Preview used to open the slide show; it plays on the canvas now, from the slide
+  before (black before the first), with the same layers and textures as the show, morph
+  included. Picking a transition or an animation previews it while AutoPreview is on (the
+  default, as in PowerPoint); an animation preview plays only the selected shapes' effects.
+- Gallery tiles under the pointer play their effect: transitions between a grey and a blue card,
+  animations on a small shape run through the real timeline.
+- Screen Clipping leaves deckrt's own windows out of the copy with `SetWindowDisplayAffinity`
+  instead of hiding the main window, since a hidden or minimised window stops getting frames.
+  On Windows before 10 version 2004 deckrt shows in the copy. The clipping window covers the
+  display deckrt is on.
+- The sample deck in the program is built only from pictures and a model drawn in code, so it
+  can ship to anyone. Gid's own sample deck (with figures from his lectures) stays out of the
+  repository.
 
 ## PowerPoint feel: next run
 

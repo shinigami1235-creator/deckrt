@@ -262,7 +262,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         ruler_markers(app, ui, &painter, avail, xf, &t);
     }
     pointer(app, ui, &resp, xf);
-    if !app.anim_preview_active() {
+    if !app.anim_preview_active() && !crate::deckrt::preview::active(app) {
+        // deckrt hook: no handles over a transition preview
         overlays(app, ui, &painter, xf, &t);
         ime_output(app, ui, xf);
         media_bar(app, ui, xf);

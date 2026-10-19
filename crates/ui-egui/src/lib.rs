@@ -1551,6 +1551,7 @@ impl SlideApp {
         self.drain_control(ctx);
         self.poll_opening();
         deckrt::logic(self); // deckrt hook
+        deckrt::screenshot::frame(self, ctx); // deckrt hook: Screen Clipping's window
         if self.fonts_ready {
             self.drain_inbox();
         }

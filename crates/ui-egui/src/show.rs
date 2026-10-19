@@ -50,7 +50,7 @@ pub struct Show {
     /// Elapsed time in presenter view. Pausing it does not pause the show.
     timer: PresenterTimer,
     /// Speaker-notes size in presenter view, in points.
-    notes_px: f32,
+    pub(crate) notes_px: f32, // deckrt hook: pub(crate)
     timings: Vec<(usize, f64)>,
     last_move: f64,
     /// The last trackpad flick or mouse-wheel notch, so one gesture turns one page.
@@ -351,7 +351,7 @@ impl Show {
     }
 }
 
-fn state_for(tl: &Timeline, id: ShapeId, step: usize, t: f64, plays: &[TriggerPlay], stamps: &[StepStamp]) -> ShapeState {
+pub(crate) fn state_for(tl: &Timeline, id: ShapeId, step: usize, t: f64, plays: &[TriggerPlay], stamps: &[StepStamp]) -> ShapeState {
     let a = tl.state_ordered(id, None, step, t, plays, stamps);
     ShapeState {
         visible: a.visible,
@@ -385,12 +385,13 @@ fn fit(avail: Rect, doc: &Presentation) -> Rect {
 /// Where presenter view's "Next" preview goes: the column's width below its label, kept inside
 /// the top 60% of the column. A portrait slide used to get the full width and a height many
 /// times the window (a white slab over the notes and past the window edge).
+#[cfg_attr(not(test), allow(dead_code))] // deckrt hook: presenter view lays out the next slide in deckrt::notes
 fn next_rect(right: Rect, doc: &Presentation) -> Rect {
     let area = Rect::from_min_max(right.min + vec2(0.0, 22.0), pos2(right.max.x, right.min.y + 22.0 + (right.height() - 22.0).max(0.0) * 0.6));
     Rect::from_min_size(area.min, fit(area, doc).size())
 }
 
-fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32) -> Mesh {
+pub(crate) fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32) -> Mesh {
     let mut m = match tex {
         Some(id) => Mesh::with_texture(id),
         None => Mesh::default(),
@@ -409,7 +410,7 @@ fn quad_mesh(tex: Option<egui::TextureId>, rect: Rect, l: &Layer, color: Color32
 }
 
 /// Render the backgrounds and contents of a transition's two slides into textures, once.
-fn part_textures(ctx: &egui::Context, doc: &Presentation, from: Option<usize>, to: usize, size: (u32, u32)) -> [Option<TextureHandle>; 4] {
+pub(crate) fn part_textures(ctx: &egui::Context, doc: &Presentation, from: Option<usize>, to: usize, size: (u32, u32)) -> [Option<TextureHandle>; 4] {
     use deckcraft_render::SlidePart;
     let threads = if cfg!(target_arch = "wasm32") { 0 } else { std::thread::available_parallelism().map(|n| n.get().min(8) as u16).unwrap_or(0) };
     let opts = RenderOpts { scale: size.0 as f64 / doc.slide_size.width.max(1.0), size: Some(size), threads, ..Default::default() };
@@ -1482,7 +1483,7 @@ const GRID_CAP: usize = 48;
 const TOOL_BAR_W: f32 = 520.0;
 const NOTES_DEFAULT: f32 = 18.0;
 const NOTES_MIN: f32 = 12.0;
-const NOTES_MAX: f32 = 48.0;
+const NOTES_MAX: f32 = crate::deckrt::notes::NOTES_MAX; // deckrt hook: was 48
 const NOTES_STEP: f32 = 4.0;
 
 /// Presenter-view elapsed time. Pausing freezes the number; the show keeps playing.
@@ -1878,8 +1879,7 @@ fn presenter_window(
                 });
                 ui.add_space(8.0);
                 let avail = ui.available_rect_before_wrap();
-                let left = Rect::from_min_max(avail.min, pos2(avail.min.x + avail.width() * 0.62, avail.max.y));
-                let right = Rect::from_min_max(pos2(left.max.x + 16.0, avail.min.y), avail.max);
+                let (left, right) = crate::deckrt::notes::columns(ui, show, avail); // deckrt hook: a divider to drag
                 let cr = fit(Rect::from_min_max(left.min, pos2(left.max.x, left.min.y + left.height() * 0.8)), doc);
                 let cr = Rect::from_min_size(left.min, cr.size());
                 if let Some(t) = &cur_tex {
@@ -1914,38 +1914,8 @@ fn presenter_window(
                     now,
                     &mut go_to,
                 );
-                let nr = next_rect(right, doc);
-                ui.painter().text(right.min, Align2::LEFT_TOP, "Next", theme::font(13.0), Color32::from_gray(170));
-                match &next_tex {
-                    Some(t) => {
-                        ui.painter().image(t.id(), nr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-                    }
-                    None => {
-                        ui.painter().rect_filled(nr, CornerRadius::ZERO, Color32::from_gray(40));
-                        ui.painter().text(nr.center(), Align2::CENTER_CENTER, "End of slide show", theme::font(13.0), Color32::from_gray(170));
-                    }
-                }
-                // deckrt hook: the Phones section between the next slide and the notes.
-                let used = crate::deckrt::show::presenter_phones(ui, show, Rect::from_min_max(pos2(right.min.x, nr.max.y + 12.0), right.max));
-                let notes_head = Rect::from_min_size(pos2(right.min.x, nr.max.y + 12.0 + used), vec2(right.width(), 28.0));
-                let mut head = ui.new_child(egui::UiBuilder::new().max_rect(notes_head));
-                head.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Notes").size(13.0).color(Color32::from_gray(170)));
-                    if ui.button("A-").clicked() {
-                        show.nudge_notes(-NOTES_STEP);
-                    }
-                    ui.label(egui::RichText::new(format!("{}", show.notes_px as i32)).size(13.0).color(Color32::from_gray(200)));
-                    if ui.button("A+").clicked() {
-                        show.nudge_notes(NOTES_STEP);
-                    }
-                });
-                let notes_rect = Rect::from_min_max(pos2(right.min.x, notes_head.max.y + 4.0), right.max);
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(notes_rect));
-                egui::ScrollArea::vertical().show(&mut child, |ui| {
-                    ui.label(
-                        egui::RichText::new(if notes.is_empty() { "No notes." } else { &notes }).size(show.notes_px).color(Color32::from_gray(230)),
-                    );
-                });
+                // deckrt hook: the next slide, the Phones section and the notes, with dividers to drag.
+                crate::deckrt::notes::right_column(ui, show, doc, right, next_tex.as_ref(), &notes);
             });
             if ui.input(|i| i.viewport().close_requested()) {
                 show.presenter = false;

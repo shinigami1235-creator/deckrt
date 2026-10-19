@@ -536,6 +536,16 @@ fn new_tiles(app: &mut SlideApp, ui: &mut Ui, query: &str, limit: usize, blank: 
             }
             shown += 1;
         }
+        // deckrt hook: the sample deck with one slide for each feature.
+        if (q.is_empty() || "sample deck feature tour deckrt".contains(&q)) && shown < limit {
+            let th = deckcraft_model::theme::builtin_themes().into_iter().find(|t| t.name == "Harbor");
+            if tile(ui, "Sample deck: deckrt feature tour", th.as_ref(), false).clicked() {
+                if let Err(e) = app.run("deckrt.openSample", json!({})) {
+                    app.set_status(e);
+                }
+                app.close_backstage();
+            }
+        }
         if sample && shown < limit {
             let th = deckcraft_model::theme::builtin_themes().into_iter().find(|t| t.name == "DeckCraft");
             if tile(ui, "Sample deck: Northern Lights", th.as_ref(), false).clicked()

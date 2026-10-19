@@ -1,7 +1,22 @@
 # Changes
 
 Each numbered version of deckrt has a section here, newest first. The section becomes the notes
-on the version's page under Releases when its tag is pushed.
+on the version's page under Releases when the build makes that version. Unreleased lists what is
+in the test build so far.
+
+## Unreleased
+
+- **Sliders for picture and fill transparency**, and finer picture controls: Brightness,
+  Contrast, Saturation, Transparency and Crop each have a slider and a number box, and the
+  picture changes while you drag. Saturation is now kept when the deck is saved.
+- **Bigger notes in presenter view.** The notes have a panel of their own, drag the dividers to
+  give them more room, Hide next slide gives them the whole column, and Ctrl + mouse wheel sizes
+  the text. The layout is kept for the next show.
+- **Previews without the slide show.** Transitions › Preview plays on the slide, picking an
+  effect plays it (AutoPreview), and hovering over an effect in the gallery shows it moving.
+- **Pictures in the Insert menus** for Chart, WordArt, Action and SmartArt.
+- **Insert › Screenshot**: pictures of your open windows, and Screen Clipping.
+- **The sample deck** is in File › New: one slide for each feature, with notes to read aloud.
 
 ## 0.1.0 (2026-10-18)
 

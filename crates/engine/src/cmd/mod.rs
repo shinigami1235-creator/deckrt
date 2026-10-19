@@ -20,6 +20,8 @@ pub mod deckrt_privacy; // deckrt: the check before sharing
 pub mod deckrt_coach; // deckrt: the pace kept from a rehearsal
 pub mod deckrt_record; // deckrt: recorded narration
 pub mod deckrt_tidy; // deckrt: Tidy This Slide
+pub mod deckrt_live; // deckrt: live sliders, one undo step a drag
+pub mod deckrt_sample; // deckrt: the sample deck that comes with the program
 pub mod media;
 pub mod merge;
 pub mod picture_style;
@@ -203,6 +205,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(deckrt_coach::specs()); // deckrt hook
         v.extend(deckrt_record::specs()); // deckrt hook
         v.extend(deckrt_tidy::specs()); // deckrt hook
+        v.extend(deckrt_sample::specs()); // deckrt hook
         v
     })
 }

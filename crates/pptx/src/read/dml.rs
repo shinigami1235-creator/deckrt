@@ -163,6 +163,12 @@ pub fn blip_fill(imp: &mut Imp, part: &Part, bf: &El) -> Option<PictureFill> {
             }
         }
     }
+    if let Some(b) = blip
+        && pf.artistic.is_none()
+        && let Some(sat) = crate::deckrt::read_saturation(part, b)
+    {
+        pf.adjust.saturation = Some(sat); // deckrt hook
+    }
     if let Some(r) = bf.child("srcRect") {
         pf.crop = [pct(r, "l").unwrap_or(0.0), pct(r, "t").unwrap_or(0.0), pct(r, "r").unwrap_or(0.0), pct(r, "b").unwrap_or(0.0)]
             .map(|v| v.clamp(-10.0, 1.0));

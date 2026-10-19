@@ -1,11 +1,13 @@
 //! deckrt's slide show extras that need the platform.
 //!
+//! - [`capture`]: pictures of the open windows and the screen, for Insert › Screenshot.
 //! - [`displays`]: the connected displays, in the order `egui::ViewportCommand::SetMonitor` takes.
 //! - [`split`], [`presenter_frame`]: which display the audience screen and the presenter window
 //!   go to.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod capture;
 pub mod displays;
 
 /// One connected display, in `available_monitors()` order (the index

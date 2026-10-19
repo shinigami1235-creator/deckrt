@@ -9,6 +9,7 @@
 
 mod cfb;
 mod custgeom;
+mod deckrt; // deckrt hook: picture saturation
 mod dgm;
 mod maps;
 mod opc;

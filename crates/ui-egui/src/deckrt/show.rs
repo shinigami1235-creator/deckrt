@@ -115,6 +115,9 @@ pub struct Ext {
     pub auto_fired: std::collections::BTreeSet<u32>,
     /// Rehearse with Coach: asked for when the show starts, then listening.
     pub coach_wanted: bool,
+    /// Presenter view's columns and next slide (see `notes`), read from the settings once.
+    pub layout: super::notes::Layout,
+    pub layout_loaded: bool,
     pub coach: Option<super::coach::Live>,
     /// Presenter view's line on the pace kept from a rehearsal, and whether the talk is behind.
     pub pace: Option<(String, bool)>,
@@ -169,6 +172,8 @@ impl Default for Ext {
             anims_done_at: None,
             auto_fired: Default::default(),
             coach_wanted: false,
+            layout: Default::default(),
+            layout_loaded: false,
             coach: None,
             pace: None,
             qr_shown: false,
@@ -1758,6 +1763,7 @@ use crate::SlideApp;
 /// the phones are served and sent a live picture when something they can see changed.
 pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc<Presentation>, now: f64) {
     let idx = show.state.slide;
+    super::notes::start(app, show);
     show.ext.sync_slide(doc, idx);
     if !show.reading && !show.preview_only {
         fire_on_open(show, doc, now, ctx);
@@ -1892,6 +1898,7 @@ pub fn draw_qr(show: &Show, painter: &egui::Painter, full: Rect, srect: Rect) {
 pub fn end_show(app: &mut SlideApp, show: &mut Show, doc: &Presentation) {
     super::record::end_show(app, show);
     super::coach::end_show(app, show);
+    super::notes::end(app, show);
     if let Some(ph) = show.ext.phones.take() {
         ph.stop(&show.ext.states, doc);
     }

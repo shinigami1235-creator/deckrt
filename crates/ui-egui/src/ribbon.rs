@@ -942,6 +942,7 @@ fn drawing_group(app: &mut SlideApp, ui: &mut Ui) {
                             None => run(app, "shape.fill", json!({"none": true})),
                         }
                     }
+                    crate::deckrt::format_picture::fill_transparency(app, ui); // deckrt hook
                 });
             }
             let (m, a) = small_button_ex(ui, Icon::ShapeOutline, "Shape Outline", sel, false, true);
@@ -1225,8 +1226,7 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         big(app, ui, Icon::Picture, "Pictures", "app.insertPictureDialog", json!({}));
         photo_album_button(app, ui);
-        let r = big_button(ui, Icon::Screenshot, "Screenshot", false);
-        let _ = r.on_hover_text("Screenshot (not available yet)");
+        crate::deckrt::screenshot::button(app, ui); // deckrt hook: open windows and Screen Clipping
     });
     group(ui, |ui| {
         let r = big_button(ui, Icon::Shapes, "Shapes", enabled(app, "shape.insert"));
@@ -1239,17 +1239,11 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
         egui::Popup::menu(&r).width(340.0).show(|ui| icon_library(app, ui));
         big(app, ui, Icon::SmartArt, "SmartArt", "app.dialog", json!({"id": "smartart"}));
         let r = big_button(ui, Icon::Chart, "Chart", enabled(app, "insert.chart"));
+        // deckrt hook: each chart type as a picture.
         egui::Popup::menu(&r).show(|ui| {
-            for k in chart_menu_types() {
-                if k.is_none() {
-                    ui.separator();
-                }
-                if let Some(k) = k
-                    && ui.button(k.label()).clicked()
-                {
-                    run(app, "insert.chart", json!({"type": format!("{k:?}")}));
-                }
-            }
+            crate::deckrt::insert_previews::chart_menu(app, ui, &chart_menu_types(), |app, ty| {
+                let _ = app.run("insert.chart", json!({"type": ty}));
+            })
         });
     });
     crate::deckrt::ribbon_group(app, ui); // deckrt hook
@@ -1259,10 +1253,8 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
         big(app, ui, Icon::Link, "Link", "app.dialog", json!({"id": "hyperlink"}));
         let r = big_button(ui, Icon::Action, "Action", enabled(app, "insert.actionButton"));
         egui::Popup::menu(&r).show(|ui| {
-            for k in ["back", "forward", "beginning", "end", "home", "information", "return", "movie", "document", "sound", "help", "custom"] {
-                if ui.button(format!("Action Button: {k}")).clicked() {
-                    run(app, "insert.actionButton", json!({"kind": k}));
-                }
+            if crate::deckrt::insert_previews::action_menu(app, ui) {
+                ui.close(); // deckrt hook: the buttons as pictures
             }
             ui.separator();
             let has_sel = app.session.active().is_some_and(|s| !s.selection.shapes.is_empty());
@@ -1278,13 +1270,7 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
         big(app, ui, Icon::TextBox, "Text\nBox", "insert.textBox", json!({}));
         big(app, ui, Icon::HeaderFooter, "Header &\nFooter", "app.dialog", json!({"id": "headerFooter"}));
         let r = big_button(ui, Icon::WordArt, "WordArt", enabled(app, "insert.wordArt"));
-        egui::Popup::menu(&r).show(|ui| {
-            for i in 0..6 {
-                if ui.button(format!("WordArt style {}", i + 1)).clicked() {
-                    run(app, "insert.wordArt", json!({"style": i}));
-                }
-            }
-        });
+        egui::Popup::menu(&r).show(|ui| crate::deckrt::insert_previews::wordart_menu(app, ui)); // deckrt hook: pictures
         big(app, ui, Icon::DateTime, "Date &\nTime", "insert.dateTime", json!({}));
         big(app, ui, Icon::SlideNumber, "Slide\nNumber", "insert.slideNumber", json!({}));
     });
@@ -1638,12 +1624,13 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
     let cur = app.session.active().and_then(|d| d.current_slide().and_then(|s| s.transition.clone()));
     let kind = cur.as_ref().map(|t| t.kind.clone()).unwrap_or_else(|| "none".into());
     group(ui, |ui| {
-        if big_button(ui, Icon::Preview, "Preview", true).clicked() {
-            let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
-            app.start_show(from, true);
-            if let Some(s) = app.show.as_mut() {
-                s.preview_only = true;
-            }
+        // deckrt hook: the transition plays on the canvas; the arrow holds AutoPreview.
+        let (main, arrow) = big_button_ex(ui, Icon::Preview, "Preview", true, true, crate::deckrt::preview::active(app));
+        if main.on_hover_text("Play this slide's transition on the slide").clicked() {
+            crate::deckrt::preview::start_transition(app);
+        }
+        if let Some(a) = arrow {
+            egui::Popup::menu(&a).show(|ui| crate::deckrt::preview::auto_preview_menu(app, ui));
         }
     });
     group(ui, |ui| {
@@ -1660,6 +1647,7 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
         ) && let Some(x) = shown.get(i)
         {
             run(app, "transition.set", json!({"kind": x.0}));
+            crate::deckrt::preview::auto_transition(app); // deckrt hook
         }
         let more = widgets::drop_button(ui, "", vec2(14.0, 52.0), true);
         egui::Popup::menu(&more).width(480.0).show(|ui| {
@@ -1674,6 +1662,7 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
                         paint_transition_tile(ui.painter(), r.shrink(3.0), (x.0, x.1));
                         if resp.clicked() {
                             run(app, "transition.set", json!({"kind": x.0}));
+                            crate::deckrt::preview::auto_transition(app); // deckrt hook
                             ui.close();
                         }
                     }
@@ -1689,6 +1678,7 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
             for &(o, on) in &rows {
                 if ui.selectable_label(on, deckcraft_model::anim::transition_option_label(&kind, o)).clicked() {
                     run(app, "transition.options", json!({"option": o}));
+                    crate::deckrt::preview::auto_transition(app); // deckrt hook
                     ui.close();
                 }
             }
@@ -1793,6 +1783,9 @@ fn option_label(o: &str) -> String {
 }
 
 pub fn paint_transition_tile(p: &egui::Painter, r: Rect, (id, label): (&str, &str)) {
+    if crate::deckrt::preview::transition_tile(p, r, id, label) {
+        return; // deckrt hook: the effect plays in the tile under the pointer
+    }
     let t = Tokens::get(p.ctx());
     let pic = Rect::from_min_size(r.min + vec2(4.0, 2.0), vec2(r.width() - 8.0, r.height() - 18.0));
     let blue = Color32::from_rgb(0x2E, 0x6F, 0xD8);
@@ -1871,9 +1864,12 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
     });
     group(ui, |ui| {
         let playing = app.anim_preview_active();
-        let (resp, _) = big_button_ex(ui, Icon::Preview, "Preview", true, false, playing);
+        let (resp, arrow) = big_button_ex(ui, Icon::Preview, "Preview", true, true, playing);
         if resp.on_hover_text("Play this slide's animations on the canvas").clicked() {
             run(app, "animation.preview", json!({}));
+        }
+        if let Some(a) = arrow {
+            egui::Popup::menu(&a).show(|ui| crate::deckrt::preview::auto_preview_menu(app, ui)); // deckrt hook
         }
     });
     group(ui, |ui| {
@@ -1913,6 +1909,7 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
         ) && let Some(a) = quick.get(i)
         {
             run(app, "animation.set", json!({"effect": a.0, "class": a.2.xml()}));
+            crate::deckrt::preview::auto_animation(app); // deckrt hook
         }
         let more = widgets::drop_button(ui, "", vec2(14.0, 52.0), has_sel);
         egui::Popup::menu(&more).width(420.0).show(|ui| {
@@ -1929,6 +1926,7 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
                         paint_anim_tile(ui.painter(), r.shrink(2.0), a.1, a.2, true);
                         if resp.clicked() {
                             run(app, "animation.set", json!({"effect": a.0, "class": a.2.xml()}));
+                            crate::deckrt::preview::auto_animation(app); // deckrt hook
                             ui.close();
                         }
                     }
@@ -1943,6 +1941,7 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
             for &(o, on) in &effect_rows {
                 if ui.selectable_label(on, option_label(o)).clicked() {
                     run(app, "animation.options", json!({"option": o}));
+                    crate::deckrt::preview::auto_animation(app); // deckrt hook
                     ui.close();
                 }
             }
@@ -2040,6 +2039,9 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
 }
 
 pub fn paint_anim_tile(p: &egui::Painter, r: Rect, label: &str, class: AnimClass, enabled: bool) {
+    if crate::deckrt::preview::animation_tile(p, r, label, class, enabled) {
+        return; // deckrt hook: the effect plays in the tile under the pointer
+    }
     let t = Tokens::get(p.ctx());
     let icon = match class {
         AnimClass::Entrance => Icon::AnimEntrance,
@@ -2437,6 +2439,7 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
                             None => run(app, "shape.fill", json!({"none": true})),
                         }
                     }
+                    crate::deckrt::format_picture::fill_transparency(app, ui); // deckrt hook
                     if ui.button("Gradient…").clicked() {
                         let _ = app.run("view.pane", json!({"pane": "format", "tab": "fill"}));
                         ui.close();
@@ -2586,26 +2589,11 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
             }
         });
         let r = big_button(ui, Icon::Corrections, "Corrections", true);
-        egui::Popup::menu(&r).show(|ui| {
-            for b in [-0.4, -0.2, 0.0, 0.2, 0.4] {
-                if ui.button(format!("Brightness {:+}%", (b * 100.0) as i32)).clicked() {
-                    run(app, "picture.adjust", json!({"brightness": b}));
-                }
-            }
-            ui.separator();
-            for c in [-0.4, -0.2, 0.0, 0.2, 0.4] {
-                if ui.button(format!("Contrast {:+}%", (c * 100.0) as i32)).clicked() {
-                    run(app, "picture.adjust", json!({"contrast": c}));
-                }
-            }
-        });
+        // deckrt hook: sliders with number boxes and a 5 by 5 grid of steps.
+        egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| crate::deckrt::format_picture::corrections_menu(app, ui));
         let r = big_button(ui, Icon::ColorAdjust, "Color", true);
-        egui::Popup::menu(&r).show(|ui| {
-            for s in [0.0, 0.33, 0.66, 1.0, 1.5, 2.0, 3.0] {
-                if ui.button(format!("Saturation {}%", (s * 100.0) as i32)).clicked() {
-                    run(app, "picture.adjust", json!({"saturation": s}));
-                }
-            }
+        egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            crate::deckrt::format_picture::color_sliders(app, ui); // deckrt hook
             ui.separator();
             ui.label("Recolor");
             let sc = scheme(app);
@@ -2639,6 +2627,7 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 }
             });
+            crate::deckrt::format_picture::color_options(app, ui); // deckrt hook
         });
         let r = big_button(ui, Icon::ArtisticEffects, "Artistic\nEffects", enabled(app, "picture.artisticEffect"));
         egui::Popup::menu(&r).show(|ui| {
@@ -2652,13 +2641,8 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
             }
         });
         let r = big_button(ui, Icon::Transparency, "Transparency", true);
-        egui::Popup::menu(&r).show(|ui| {
-            for tr in [0.0, 0.15, 0.3, 0.5, 0.65, 0.8, 0.95] {
-                if ui.button(format!("{}%", (tr * 100.0) as i32)).clicked() {
-                    run(app, "picture.adjust", json!({"transparency": tr}));
-                }
-            }
-        });
+        // deckrt hook: a slider with a number box above the steps.
+        egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| crate::deckrt::format_picture::transparency_menu(app, ui));
         rows(ui, |ui| {
             small(app, ui, Icon::ChangePicture, "Change Picture", "app.changePictureDialog", json!({}));
             small(app, ui, Icon::ResetPicture, "Reset Picture", "picture.reset", json!({}));
@@ -3050,19 +3034,13 @@ fn table_layout(app: &mut SlideApp, ui: &mut Ui) {
 fn chart_design(app: &mut SlideApp, ui: &mut Ui) {
     group(ui, |ui| {
         let r = big_button(ui, Icon::ChangeChartType, "Change\nChart Type", true);
+        // deckrt hook: each chart type as a picture; the chart keeps its data.
         egui::Popup::menu(&r).show(|ui| {
-            for k in chart_menu_types() {
-                let Some(k) = k else {
-                    ui.separator();
-                    continue;
-                };
-                if ui.button(k.label()).clicked() {
-                    // Replace the chart's type keeping its data.
-                    if let Some(id) = app.session.active().and_then(|d| d.selection.shapes.first().copied()) {
-                        let _ = app.run("chart.type", json!({"id": id.0, "type": format!("{k:?}")}));
-                    }
+            crate::deckrt::insert_previews::chart_menu(app, ui, &chart_menu_types(), |app, ty| {
+                if let Some(id) = app.session.active().and_then(|d| d.selection.shapes.first().copied()) {
+                    let _ = app.run("chart.type", json!({"id": id.0, "type": ty}));
                 }
-            }
+            })
         });
         big(app, ui, Icon::EditData, "Edit\nData", "app.dialog", json!({"id": "chartData"}));
     });

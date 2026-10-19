@@ -7,6 +7,12 @@ pub mod captions;
 pub mod coach;
 pub mod crowd;
 pub mod finder;
+pub mod format_picture;
+pub mod insert_previews;
+pub mod notes;
+pub mod prefs;
+pub mod preview;
+pub mod screenshot;
 pub mod record;
 pub mod video;
 pub mod check;
@@ -94,6 +100,16 @@ pub struct State {
     pub check_passed: Option<u64>,
     /// The connected displays, asked for when a show starts (the desktop app fills this in).
     pub list_displays: Option<Box<dyn FnMut() -> Vec<show::DisplayInfo>>>,
+    /// Pictures for the Chart, WordArt and Action menus.
+    pub insert_thumbs: insert_previews::Thumbs,
+    /// Insert › Screenshot: the window pictures and a Screen Clipping in progress.
+    pub screenshot: screenshot::State,
+    /// A transition playing on the editor canvas.
+    pub trans_preview: Option<preview::TransPreview>,
+    /// The settings kept between runs, once read.
+    pub prefs: Option<prefs::Prefs>,
+    /// A live slider was dragged this frame (see `format_picture::end_frame`).
+    pub live_touched: bool,
 }
 
 impl State {
@@ -148,6 +164,7 @@ pub fn logic(app: &mut SlideApp) {
 
 /// After the UI: textures of models no longer on screen are released.
 pub fn end_frame(app: &mut SlideApp) {
+    format_picture::end_frame(app);
     if let Some(g) = app.deckrt.gpu.as_mut() {
         g.end_frame();
     }
