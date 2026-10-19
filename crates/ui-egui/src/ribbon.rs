@@ -154,7 +154,7 @@ fn contextual(app: &SlideApp) -> Vec<&'static str> {
     v
 }
 
-const TABS: [&str; 10] = ["Home", "Insert", "Draw", "Design", "Transitions", "Animations", "Slide Show", "Record", "Review", "View"];
+pub(crate) const TABS: [&str; 10] = ["Home", "Insert", "Draw", "Design", "Transitions", "Animations", "Slide Show", "Record", "Review", "View"];
 
 /// Tab row and the ribbon card.
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
@@ -453,10 +453,14 @@ fn slides_group(app: &mut SlideApp, ui: &mut Ui) {
         }
         crate::deckrt::finder::ribbon_button(app, ui); // deckrt hook
         rows(ui, |ui| {
-            let (r, _) = small_button_ex(ui, Icon::Layout, "Layout", enabled(app, "slide.layout"), false, true);
+            // deckrt hook: the arrow opens the menu too.
+            let (r, arrow_part) = small_button_ex(ui, Icon::Layout, "Layout", enabled(app, "slide.layout"), false, true);
+            let r = arrow_part.map_or(r.clone(), |a| r | a);
             egui::Popup::menu(&r).width(420.0).show(|ui| layout_menu(app, ui, "slide.layout"));
             small(app, ui, Icon::ResetSlide, "Reset", "slide.reset", json!({}));
-            let (r, _) = small_button_ex(ui, Icon::Section, "Section", enabled(app, "section.add"), false, true);
+            // deckrt hook: the arrow opens the menu too.
+            let (r, arrow_part) = small_button_ex(ui, Icon::Section, "Section", enabled(app, "section.add"), false, true);
+            let r = arrow_part.map_or(r.clone(), |a| r | a);
             egui::Popup::menu(&r).show(|ui| {
                 if ui.button("Add Section").clicked() {
                     run(app, "section.add", json!({}));
@@ -804,7 +808,12 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                         }
                     }
                 });
-                let r = icon_toggle(ui, Icon::SmartArt, "Convert to SmartArt", enabled(app, "smartArt.fromText"), false);
+                // deckrt hook: only when the selection has text to turn into a diagram.
+                let has_text = app.session.active().is_some_and(|d| {
+                    d.selection.text.is_some()
+                        || d.selected_shapes().iter().any(|sh| sh.text.as_ref().is_some_and(|t| t.paragraphs.iter().any(|p| !p.text().trim().is_empty())))
+                });
+                let r = icon_toggle(ui, Icon::SmartArt, "Convert to SmartArt", enabled(app, "smartArt.fromText") && has_text, false);
                 egui::Popup::menu(&r).show(|ui| smartart_gallery(app, ui, "smartArt.fromText", json!({}), "", "", "", None));
                 if ui.add_enabled(en, egui::Button::new("Paragraph…").min_size(vec2(88.0, 22.0))).on_hover_text("Paragraph").clicked() {
                     run(app, "format.paragraphDialog", json!({}));
@@ -952,7 +961,9 @@ fn drawing_group(app: &mut SlideApp, ui: &mut Ui) {
             if let Some(a) = a {
                 widgets::color_popup(&a).show(|ui| outline_menu(app, ui, &sc));
             }
-            let (_, a) = small_button_ex(ui, Icon::ShapeEffects, "Shape Effects", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::ShapeEffects, "Shape Effects", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 egui::Popup::menu(&a).show(|ui| effects_menu(app, ui));
             }
@@ -1444,10 +1455,8 @@ fn draw(app: &mut SlideApp, ui: &mut Ui) {
             app.session.set_tool(ToolKind::Select);
             run(app, "draw.inkToShape", json!({}));
         }
-        let r = big_button(ui, Icon::InkToText, "Ink to\nText", false);
-        let _ = r.on_hover_text("Ink to Text (coming soon)");
-        let r = big_button(ui, Icon::InkToMath, "Ink to\nMath", false);
-        let _ = r.on_hover_text("Ink to Math (coming soon)");
+        // deckrt hook: Ink to Text and Ink to Math are left out until they work (they were
+        // greyed out for good, which read as broken).
     });
 }
 
@@ -1907,32 +1916,14 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
             },
             |i| quick.get(i).map(|a| a.1.to_string()).unwrap_or_default(),
         ) && let Some(a) = quick.get(i)
+            && has_sel
         {
             run(app, "animation.set", json!({"effect": a.0, "class": a.2.xml()}));
             crate::deckrt::preview::auto_animation(app); // deckrt hook
         }
         let more = widgets::drop_button(ui, "", vec2(14.0, 52.0), has_sel);
-        egui::Popup::menu(&more).width(420.0).show(|ui| {
-            for (cls, label) in
-                [(AnimClass::Entrance, "Entrance"), (AnimClass::Emphasis, "Emphasis"), (AnimClass::Exit, "Exit"), (AnimClass::Path, "Motion Paths")]
-            {
-                ui.label(egui::RichText::new(label).font(theme::bold(12.0)));
-                ui.horizontal_wrapped(|ui| {
-                    for a in deckcraft_model::anim::ANIMATIONS.iter().filter(|a| a.2 == cls) {
-                        let (r, resp) = ui.allocate_exact_size(vec2(56.0, 54.0), Sense::click());
-                        if resp.hovered() {
-                            ui.painter().rect_filled(r, CornerRadius::same(4), Tokens::get(ui.ctx()).hover);
-                        }
-                        paint_anim_tile(ui.painter(), r.shrink(2.0), a.1, a.2, true);
-                        if resp.clicked() {
-                            run(app, "animation.set", json!({"effect": a.0, "class": a.2.xml()}));
-                            crate::deckrt::preview::auto_animation(app); // deckrt hook
-                            ui.close();
-                        }
-                    }
-                });
-            }
-        });
+        // deckrt hook: the same gallery, scrolling so it fits the screen.
+        egui::Popup::menu(&more).width(420.0).show(|ui| crate::deckrt::preview::effect_gallery(app, ui, "animation.set"));
         let effect_rows = cur.as_ref().map(|c| animation_effect_rows(&c.effect, c.class, Some(c.option.as_str()))).unwrap_or_default();
         let build = cur.as_ref().map(|c| text_build_id(c.text_build));
         let build_rows = marked_options(&["asOne", "byParagraph"], build);
@@ -1957,25 +1948,9 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
     });
     group(ui, |ui| {
         let r = big_button(ui, Icon::AddAnimation, "Add\nAnimation", has_sel);
-        egui::Popup::menu(&r).width(260.0).show(|ui| {
-            for a in deckcraft_model::anim::ANIMATIONS.iter().filter(|a| a.2 != AnimClass::Media) {
-                if ui
-                    .button(format!(
-                        "{} — {}",
-                        a.1,
-                        match a.2 {
-                            AnimClass::Entrance => "Entrance",
-                            AnimClass::Emphasis => "Emphasis",
-                            AnimClass::Exit => "Exit",
-                            _ => "Motion",
-                        }
-                    ))
-                    .clicked()
-                {
-                    run(app, "animation.add", json!({"effect": a.0, "class": a.2.xml()}));
-                }
-            }
-        });
+        // deckrt hook: the effects as tiles by category, scrolling, the way the More gallery is
+        // (a plain list ran off the bottom of the screen).
+        egui::Popup::menu(&r).width(420.0).show(|ui| crate::deckrt::preview::effect_gallery(app, ui, "animation.add"));
         big(app, ui, Icon::AnimationPane, "Animation\nPane", "view.pane", json!({"pane": "animation"}));
         let r = big_button(ui, Icon::Trigger, "Trigger", cur.is_some());
         egui::Popup::menu(&r).show(|ui| {
@@ -2115,8 +2090,7 @@ fn record(app: &mut SlideApp, ui: &mut Ui) {
         return;
     }
     group(ui, |ui| {
-        let r = big_button(ui, Icon::Cameo, "Cameo", false);
-        let _ = r.on_hover_text("Camera capture is not available yet");
+        // deckrt hook: Cameo is left out until the camera works.
         if big_button(ui, Icon::PlayFromStart, "From\nBeginning", true).clicked() {
             app.start_show(app.show_start_index(), false);
             if let Some(s) = app.show.as_mut() {
@@ -2160,8 +2134,7 @@ fn review(app: &mut SlideApp, ui: &mut Ui) {
     });
     crate::deckrt::privacy::ribbon_group(app, ui); // deckrt hook
     group(ui, |ui| {
-        let r = big_button(ui, Icon::Translate, "Translate", false);
-        let _ = r.on_hover_text("Translation needs a language model (not bundled)");
+        // deckrt hook: Translate is left out until a translation model ships.
         big(app, ui, Icon::Language, "Language", "app.dialog", json!({"id": "language"}));
     });
     group(ui, |ui| {
@@ -2447,11 +2420,15 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 });
             }
-            let (_, a) = small_button_ex(ui, Icon::ShapeOutline, "Shape Outline", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::ShapeOutline, "Shape Outline", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 widgets::color_popup(&a).show(|ui| outline_menu(app, ui, &sc));
             }
-            let (_, a) = small_button_ex(ui, Icon::ShapeEffects, "Shape Effects", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::ShapeEffects, "Shape Effects", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 egui::Popup::menu(&a).show(|ui| effects_menu(app, ui));
             }
@@ -2459,7 +2436,9 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
     });
     group(ui, |ui| {
         rows(ui, |ui| {
-            let (_, a) = small_button_ex(ui, Icon::TextFill, "Text Fill", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::TextFill, "Text Fill", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 widgets::color_popup(&a).show(|ui| {
                     if let Some(Some(c)) = widgets::color_grid(ui, &sc, None) {
@@ -2471,7 +2450,9 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
                     }
                 });
             }
-            let (_, a) = small_button_ex(ui, Icon::TextOutline, "Text Outline", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::TextOutline, "Text Outline", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 widgets::color_popup(&a).show(|ui| {
                     if let Some(c) = widgets::color_grid(ui, &sc, Some("No Outline")) {
@@ -2527,7 +2508,9 @@ fn arrange_group(app: &mut SlideApp, ui: &mut Ui) {
         let r = big_button(ui, Icon::AlignObjects, "Align", sel);
         egui::Popup::menu(&r).show(|ui| align_menu(app, ui));
         rows(ui, |ui| {
-            let (_, a) = small_button_ex(ui, Icon::Group, "Group", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::Group, "Group", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 egui::Popup::menu(&a).show(|ui| {
                     menu_item(app, ui, Icon::Group, "Group", "arrange.group", json!({}));
@@ -2535,7 +2518,9 @@ fn arrange_group(app: &mut SlideApp, ui: &mut Ui) {
                     menu_item(app, ui, Icon::Group, "Regroup", "arrange.regroup", json!({}));
                 });
             }
-            let (_, a) = small_button_ex(ui, Icon::Rotate, "Rotate", sel, false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, a) = small_button_ex(ui, Icon::Rotate, "Rotate", sel, false, true);
+            let a = a.map(|x| x | main_part);
             if let Some(a) = a {
                 egui::Popup::menu(&a).show(|ui| {
                     menu_item(app, ui, Icon::RotateRight, "Rotate Right 90°", "arrange.rotateRight", json!({}));
@@ -2647,7 +2632,9 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
         rows(ui, |ui| {
             small(app, ui, Icon::ChangePicture, "Change Picture", "app.changePictureDialog", json!({}));
             small(app, ui, Icon::ResetPicture, "Reset Picture", "picture.reset", json!({}));
-            let (_, r) = small_button_ex(ui, Icon::CompressPictures, "Compress Pictures", enabled(app, "picture.compress"), false, true);
+            // deckrt hook: the button's label opens its menu too, not only the arrow.
+            let (main_part, r) = small_button_ex(ui, Icon::CompressPictures, "Compress Pictures", enabled(app, "picture.compress"), false, true);
+            let r = r.map(|x| x | main_part);
             if let Some(r) = r {
                 egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).width(260.0).show(|ui| compress_menu(app, ui));
             }
@@ -3062,7 +3049,9 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
             run(app, "view.pane", json!({"pane": "smartart", "toggle": true}));
         }
         rows(ui, |ui| {
-            let (r, _) = small_button_ex(ui, Icon::Plus, "Add Shape", gid.is_some(), false, true);
+            // deckrt hook: the arrow opens the menu too.
+            let (r, arrow_part) = small_button_ex(ui, Icon::Plus, "Add Shape", gid.is_some(), false, true);
+            let r = arrow_part.map_or(r.clone(), |a| r | a);
             egui::Popup::menu(&r).show(|ui| {
                 for (label, pos) in [
                     ("Add Shape After", "after"),
@@ -3093,12 +3082,16 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
         }
     });
     group(ui, |ui| {
-        let (r, _) = small_button_ex(ui, Icon::Layout, "Layouts", gid.is_some(), false, true);
+        // deckrt hook: the arrow opens the menu too.
+        let (r, arrow_part) = small_button_ex(ui, Icon::Layout, "Layouts", gid.is_some(), false, true);
+        let r = arrow_part.map_or(r.clone(), |a| r | a);
         let outline = sel.as_ref().map(|(_, d)| d.nodes.clone());
         egui::Popup::menu(&r).show(|ui| {
             smartart_gallery(app, ui, "smartArt.layout", json!({"id": gid}), &kind, &style, &colors, outline.as_deref());
         });
-        let (r, _) = small_button_ex(ui, Icon::Layout, "Convert", gid.is_some(), false, true);
+        // deckrt hook: the arrow opens the menu too.
+        let (r, arrow_part) = small_button_ex(ui, Icon::Layout, "Convert", gid.is_some(), false, true);
+        let r = arrow_part.map_or(r.clone(), |a| r | a);
         egui::Popup::menu(&r).show(|ui| {
             if ui.button("Convert to Text").clicked() {
                 run(app, "smartArt.toText", json!({"id": gid}));
@@ -3109,7 +3102,9 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
         });
     });
     group(ui, |ui| {
-        let (r, _) = small_button_ex(ui, Icon::ChangeChartType, "Change Colors", gid.is_some(), false, true);
+        // deckrt hook: the arrow opens the menu too.
+        let (r, arrow_part) = small_button_ex(ui, Icon::ChangeChartType, "Change Colors", gid.is_some(), false, true);
+        let r = arrow_part.map_or(r.clone(), |a| r | a);
         egui::Popup::menu(&r).show(|ui| {
             for (k, label) in deckcraft_engine::cmd::smartart::COLORS {
                 if matches!(k, "range23" | "accent1" | "accent1Grad") {
@@ -3121,7 +3116,9 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
         });
-        let (r, _) = small_button_ex(ui, Icon::SmartArt, "SmartArt Styles", gid.is_some(), false, true);
+        // deckrt hook: the arrow opens the menu too.
+        let (r, arrow_part) = small_button_ex(ui, Icon::SmartArt, "SmartArt Styles", gid.is_some(), false, true);
+        let r = arrow_part.map_or(r.clone(), |a| r | a);
         egui::Popup::menu(&r).show(|ui| {
             for (k, label) in deckcraft_engine::cmd::smartart::STYLES {
                 if k == "polished" {

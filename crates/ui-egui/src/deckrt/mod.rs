@@ -9,6 +9,7 @@ pub mod crowd;
 pub mod finder;
 pub mod format_picture;
 pub mod insert_previews;
+pub mod messages;
 pub mod notes;
 pub mod prefs;
 pub mod preview;
@@ -96,8 +97,10 @@ pub struct State {
     pub video: video::Video,
     /// The per-user settings folder (the desktop app fills this in): the speech model lives here.
     pub settings_dir: Option<std::path::PathBuf>,
-    /// The deck revision the check before showing last passed (or was waved through) at.
-    pub check_passed: Option<u64>,
+    /// The deck and contents the check before showing last passed (or was waved through) at.
+    pub check_passed: Option<(u64, usize)>,
+    /// The deck Blur Area was started on, so it ends when another deck comes forward.
+    pub blur_doc: Option<u64>,
     /// The connected displays, asked for when a show starts (the desktop app fills this in).
     pub list_displays: Option<Box<dyn FnMut() -> Vec<show::DisplayInfo>>>,
     /// Pictures for the Chart, WordArt and Action menus.
@@ -120,6 +123,11 @@ impl State {
 }
 
 impl State {
+    /// Screen Clipping's window is up.
+    pub fn screenshot_open(&self) -> bool {
+        self.screenshot.open()
+    }
+
     /// The live turn of a model in the editor.
     pub fn turn(&self, shape: u32) -> model_view::Turn {
         self.models.turns.get(&shape).copied().unwrap_or_default()
@@ -414,7 +422,9 @@ pub fn context_items(app: &mut SlideApp, ui: &mut Ui) {
             let path = app.services.pick_open.as_mut().and_then(|p| p("model"));
             app.deckrt.picking = false;
             if let Some(path) = path {
-                let _ = app.session.execute("interactive.replaceModel", &serde_json::json!({"id": id, "path": path}));
+                if let Err(e) = app.session.execute("interactive.replaceModel", &serde_json::json!({"id": id, "path": path})) {
+                    app.set_status(e.to_string());
+                }
                 app.deckrt.models.turns.remove(&id);
                 app.drain_requests();
             }
@@ -431,3 +441,6 @@ pub fn context_items(app: &mut SlideApp, ui: &mut Ui) {
     }
     ui.separator();
 }
+
+#[cfg(test)]
+mod audit_tests;

@@ -98,6 +98,13 @@ fn insert(app: &mut SlideApp, s: &Shot) {
     }
 }
 
+impl State {
+    /// Screen Clipping's window is up.
+    pub fn open(&self) -> bool {
+        self.clip.is_some()
+    }
+}
+
 /// The Insert tab's Screenshot button and its menu.
 pub fn button(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());

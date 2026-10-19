@@ -206,6 +206,8 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
             let Some(src) = doc.slides.get(*i).map(|x| x.as_ref().clone()) else { continue };
             let mut copy = src;
             copy.id = SlideId(doc.alloc_id().ok_or_else(|| bad("slide.duplicate", NO_ID_SPACE))?);
+            // deckrt hook: a poll's "go to slide" key belongs to the original slide only.
+            copy.tags.retain(|(n, _)| !n.eq_ignore_ascii_case(deckcraft_interactive::object::SLIDE_TAG));
             // Animations follow the new shape ids, triggers included.
             let map = super::edit::reid("slide.duplicate", doc, &mut copy.shapes)?;
             super::edit::remap_animations(&mut copy.animations, &map);

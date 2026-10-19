@@ -596,7 +596,10 @@ impl SlideApp {
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
-        self.status = Some((msg.into(), now_ms()));
+        let msg: String = msg.into();
+        // deckrt hook: an engine error reads as a sentence, without the command's id.
+        let msg = if msg.starts_with("command `") || msg.starts_with("invalid parameters for `") { crate::deckrt::messages::plain_error(&msg) } else { msg };
+        self.status = Some((msg, now_ms()));
     }
 
     /// A message that must be seen wherever the user is: a toast, which also shows over the start

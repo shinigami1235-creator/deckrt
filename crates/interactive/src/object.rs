@@ -561,7 +561,14 @@ impl InteractiveObject {
             a.dx = finite(a.dx, 0.0);
             a.dy = finite(a.dy, 0.0);
         }
-        self.label.truncate(200);
+        // 200 bytes, cut on a character boundary (Thai is 3 bytes a character).
+        if self.label.len() > 200 {
+            let mut cut = 200;
+            while !self.label.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            self.label.truncate(cut);
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 //! Delete, and an Advanced section that holds the rest.
 
 use deckcraft_interactive::measure::Preset;
-use deckcraft_interactive::object::{self as obj, Anchor, Config, InteractiveObject, Kind, MediaRef, PollKind, PopupContent, Product, Trigger};
+use deckcraft_interactive::object::{self as obj, Anchor, Config, InteractiveObject, Kind, PollKind, PopupContent, Product, Trigger};
 use deckcraft_model::{MediaId, ShapeId};
 use egui::{Color32, RichText, Ui};
 use serde_json::json;
@@ -12,8 +12,14 @@ use crate::SlideApp;
 use crate::theme::{self, Tokens};
 use crate::widgets;
 
-/// A text field edited in place: the committed text comes back when editing ends (focus leaves
-/// the field, or Enter). While it is not focused it shows `value`.
+/// Set while a pane text field has the keyboard, so the next frame keeps one undo step open for
+/// the typing (see [`show`]).
+const TYPING: &str = "deckrt-pane-typing";
+
+/// A text field edited in place. Each change comes back as it is typed and goes into the object
+/// at once, all of it one undo step, so nothing typed is lost when the selection moves on before
+/// the field sees its focus leave. Enter ends a one-line field. While it is not focused it
+/// shows `value`.
 fn text_field(ui: &mut Ui, id: egui::Id, value: &str, multiline: bool) -> Option<String> {
     let focused = ui.memory(|m| m.has_focus(id));
     let mut buf: String = if focused { ui.data_mut(|d| d.get_temp::<String>(id)).unwrap_or_else(|| value.to_string()) } else { value.to_string() };
@@ -26,9 +32,13 @@ fn text_field(ui: &mut Ui, id: egui::Id, value: &str, multiline: bool) -> Option
         ui.add(egui::TextEdit::singleline(&mut buf).id(id).desired_width(w))
     };
     ui.data_mut(|d| d.insert_temp(id, buf.clone()));
-    let enter = !multiline && r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if (r.lost_focus() || enter) && buf != value {
-        ui.data_mut(|d| d.remove::<String>(id));
+    if r.has_focus() {
+        ui.data_mut(|d| d.insert_temp(egui::Id::new(TYPING), true));
+        if !multiline && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            r.surrender_focus();
+        }
+    }
+    if buf != value && (r.changed() || r.lost_focus()) {
         return Some(buf);
     }
     None
@@ -91,6 +101,16 @@ fn run(app: &mut SlideApp, cmd: &str, p: serde_json::Value) {
 }
 
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+    // Typing in a field, or dragging a slider or colour in the pane, is one undo step: a live
+    // step stays open while it goes on and ends the frame after (format_picture::end_frame).
+    let typing = ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::new(TYPING))).unwrap_or(false);
+    let dragging = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.primary_down()) && ui.rect_contains_pointer(ui.max_rect());
+    if typing || dragging {
+        if deckcraft_engine::cmd::deckrt_live::open_label(&app.session).is_none() {
+            deckcraft_engine::cmd::deckrt_live::begin(&mut app.session, if typing { "Typing" } else { "Change" });
+        }
+        app.deckrt.live_touched = true;
+    }
     let t = Tokens::get(ui.ctx());
     let Some((sh, o)) = super::selected(app) else {
         ui.label(RichText::new("Select an interactive object to change it.").color(t.text_dim));
@@ -260,9 +280,16 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["Text", "Picture", "Web page"].iter().enumerate() {
                     if ui.selectable_label(kind_now == i, *name).clicked() && kind_now != i {
+                        if i == 1 {
+                            // A picture popup needs its picture: ask for it now, and leave the
+                            // popup as it was when none is picked.
+                            if let Some(path) = pick_pictures(app, false).into_iter().next() {
+                                run(app, "interactive.addImage", json!({"id": id, "path": path, "slot": "popup"}));
+                            }
+                            continue;
+                        }
                         c.content = match i {
                             0 => PopupContent::Text { text: "Type the popup text here.".into() },
-                            1 => PopupContent::Image { media: MediaRef(MediaId(0)) },
                             _ => PopupContent::Web { url: "https://".into() },
                         };
                         changed = true;
@@ -308,7 +335,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
-                    let resp = ui.add(egui::DragValue::new(&mut r[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
+                    let resp = ui.add(egui::DragValue::new(&mut r[i]).update_while_editing(false).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
                     if committed(ui, resp, &mut r[i]) {
                         changed = true;
                     }
@@ -362,6 +389,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 let ranking = c.kind == PollKind::Ranking;
                 label(ui, "Answers");
                 let n = c.options.len();
+                let mut remove_at = None;
                 for i in 0..n {
                     ui.horizontal(|ui| {
                         // The tick marks the right answer; a dim one is the button to make it so.
@@ -385,18 +413,21 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             }
                         });
                         if ui.add_enabled(n > 2, egui::Button::new("Remove")).clicked() {
-                            c.options.remove(i);
-                            if i < c.targets.len() {
-                                c.targets.remove(i);
-                            }
-                            c.correct = match c.correct {
-                                Some(k) if k == i => None,
-                                Some(k) if k > i => Some(k - 1),
-                                k => k,
-                            };
-                            changed = true;
+                            remove_at = Some(i);
                         }
                     });
+                }
+                if let Some(i) = remove_at.filter(|i| *i < c.options.len()) {
+                    c.options.remove(i);
+                    if i < c.targets.len() {
+                        c.targets.remove(i);
+                    }
+                    c.correct = match c.correct {
+                        Some(k) if k == i => None,
+                        Some(k) if k > i => Some(k - 1),
+                        k => k,
+                    };
+                    changed = true;
                 }
                 ui.horizontal_wrapped(|ui| {
                     if ui.add_enabled(n < 64, egui::Button::new("Add answer")).clicked() {
@@ -442,6 +473,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         Config::InjectionMap(c) => {
             label(ui, "Products");
             let n = c.products.len();
+            // Removed after the loop, so the rows still drawn this frame keep their index.
+            let mut remove_at = None;
             for i in 0..n {
                 ui.horizontal_wrapped(|ui| {
                     let mut rgb = obj::parse_color(&c.products[i].color);
@@ -456,7 +489,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             changed = true;
                         }
                     });
-                    let resp = ui.add(egui::DragValue::new(&mut c.products[i].default_dose).speed(0.1).range(0.0..=1000.0).max_decimals(2));
+                    let resp = ui.add(egui::DragValue::new(&mut c.products[i].default_dose).update_while_editing(false).speed(0.1).range(0.0..=1000.0).max_decimals(2));
                     if committed(ui, resp, &mut c.products[i].default_dose) {
                         changed = true;
                     }
@@ -468,10 +501,13 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                         }
                     });
                     if ui.add_enabled(n > 1, egui::Button::new("Remove")).clicked() {
-                        c.products.remove(i);
-                        changed = true;
+                        remove_at = Some(i);
                     }
                 });
+            }
+            if let Some(i) = remove_at.filter(|i| *i < c.products.len()) {
+                c.products.remove(i);
+                changed = true;
             }
             if ui.add_enabled(n < 20, egui::Button::new("Add a product")).clicked() {
                 c.products.push(Product::default());
@@ -489,7 +525,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     let mut n = next.next_clicks;
     ui.horizontal(|ui| {
         ui.label("Next runs it");
-        let r = ui.add(egui::DragValue::new(&mut n).range(0..=20).speed(0.1));
+        let r = ui.add(egui::DragValue::new(&mut n).update_while_editing(false).range(0..=20).speed(0.1));
         ui.label(if n == 1 { "time" } else { "times" });
         if committed(ui, r, &mut n) {
             next.next_clicks = n;
@@ -512,7 +548,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
         let mut d = next.delay;
         ui.horizontal(|ui| {
             ui.label("Wait");
-            let r = ui.add(egui::DragValue::new(&mut d).range(0.0..=600.0).speed(0.1).max_decimals(1).suffix(" s"));
+            let r = ui.add(egui::DragValue::new(&mut d).update_while_editing(false).range(0.0..=600.0).speed(0.1).max_decimals(1).suffix(" s"));
             ui.label("first");
             if committed(ui, r, &mut d) {
                 next.delay = d;
@@ -572,7 +608,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         ui.horizontal_wrapped(|ui| {
             for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                 ui.label(*name);
-                let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
+                let resp = ui.add(egui::DragValue::new(&mut v[i]).update_while_editing(false).speed(0.005).range(0.0..=1.0).fixed_decimals(3));
                 if committed(ui, resp, &mut v[i]) {
                     moved = true;
                 }
@@ -626,7 +662,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 for (i, name) in [(2, "Turn"), (1, "Nod"), (0, "Tilt")] {
                     ui.label(name);
                     let mut deg = c.initial_rotation[i].to_degrees();
-                    let resp = ui.add(egui::DragValue::new(&mut deg).speed(1.0).suffix("°").fixed_decimals(0));
+                    let resp = ui.add(egui::DragValue::new(&mut deg).update_while_editing(false).speed(1.0).suffix("°").fixed_decimals(0));
                     if committed(ui, resp, &mut deg) {
                         c.initial_rotation[i] = deg.to_radians();
                         changed = true;
@@ -672,7 +708,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 ui.label("Picture shown first");
                 let n = c.images.len().max(1);
                 let mut first = c.index + 1;
-                let resp = ui.add(egui::DragValue::new(&mut first).range(1..=n));
+                let resp = ui.add(egui::DragValue::new(&mut first).update_while_editing(false).range(1..=n));
                 if committed(ui, resp, &mut first) {
                     c.index = first - 1;
                     changed = true;
@@ -693,7 +729,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
                 ui.label("Photograph shown first");
                 let n = c.images.len().max(1);
                 let mut first = c.initial_index + 1;
-                let resp = ui.add(egui::DragValue::new(&mut first).range(1..=n));
+                let resp = ui.add(egui::DragValue::new(&mut first).update_while_editing(false).range(1..=n));
                 if committed(ui, resp, &mut first) {
                     c.initial_index = first - 1;
                     changed = true;
@@ -711,14 +747,14 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Zoom(c) => {
             ui.horizontal(|ui| {
                 ui.label("Largest magnification");
-                let resp = ui.add(egui::DragValue::new(&mut c.max_scale).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1));
+                let resp = ui.add(egui::DragValue::new(&mut c.max_scale).update_while_editing(false).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1));
                 if committed(ui, resp, &mut c.max_scale) {
                     changed = true;
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("Zoom time");
-                let resp = ui.add(egui::DragValue::new(&mut c.duration_ms).speed(10).range(0..=5000).suffix(" ms"));
+                let resp = ui.add(egui::DragValue::new(&mut c.duration_ms).update_while_editing(false).speed(10).range(0..=5000).suffix(" ms"));
                 if committed(ui, resp, &mut c.duration_ms) {
                     changed = true;
                 }
@@ -730,7 +766,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
             ui.horizontal_wrapped(|ui| {
                 for (i, name) in ["x", "y", "w", "h"].iter().enumerate() {
                     ui.label(*name);
-                    let resp = ui.add(egui::DragValue::new(&mut v[i]).speed(0.005).range(0.0..=1.0).fixed_decimals(2));
+                    let resp = ui.add(egui::DragValue::new(&mut v[i]).update_while_editing(false).speed(0.005).range(0.0..=1.0).fixed_decimals(2));
                     if committed(ui, resp, &mut v[i]) {
                         changed = true;
                     }
@@ -799,7 +835,7 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Measure(c) => {
             ui.horizontal(|ui| {
                 ui.label("Line width");
-                let resp = ui.add(egui::DragValue::new(&mut c.line_width).speed(0.5).range(1.0..=20.0).suffix(" px"));
+                let resp = ui.add(egui::DragValue::new(&mut c.line_width).update_while_editing(false).speed(0.5).range(1.0..=20.0).suffix(" px"));
                 if committed(ui, resp, &mut c.line_width) {
                     changed = true;
                 }

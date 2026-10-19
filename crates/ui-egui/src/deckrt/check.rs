@@ -19,8 +19,10 @@ pub fn framed(ui: &Ui, text: &str, min_w: f32) -> egui::Button<'static> {
         .min_size(egui::vec2(min_w, 24.0))
 }
 
-fn revision(app: &SlideApp) -> Option<u64> {
-    app.session.active().map(|d| d.revision)
+/// The open deck and its content, as it passed: the document's id and the address of its
+/// contents, which changes with every edit but not with a click that only selects.
+fn revision(app: &SlideApp) -> Option<(u64, usize)> {
+    app.session.active().map(|d| (d.uid, std::sync::Arc::as_ptr(&d.doc) as usize))
 }
 
 /// Called by `start_show`: returns true when the show must wait (the list opened instead).

@@ -435,6 +435,15 @@ fn keyboard(ctx: &egui::Context, show: &mut Show, doc: &Presentation, now: f64) 
             .filter_map(|e| if let egui::Event::Key { key, pressed: true, modifiers, .. } = e { Some((*key, *modifiers)) } else { None })
             .collect()
     });
+    // deckrt hook: keys typed into a text box (a phone's question, the notes) stay there. Esc only
+    // leaves the box.
+    if crate::deckrt::show::typing(ctx) {
+        if keys.iter().any(|(k, _)| *k == egui::Key::Escape) {
+            ctx.memory_mut(|m| m.stop_text_input());
+            ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        }
+        return true;
+    }
     let mut keep = true;
     let mut actions = vec![];
     for (k, m) in keys {

@@ -368,3 +368,34 @@ pub fn animation_tile(p: &egui::Painter, r: Rect, label: &str, class: AnimClass,
     p.ctx().request_repaint();
     true
 }
+
+/// Every animation as a tile, by category, in a list that scrolls to fit the screen. A click runs
+/// `cmd` (`animation.set` replaces the shape's effect, `animation.add` adds one) and previews it.
+pub fn effect_gallery(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    let room = (ui.ctx().content_rect().height() - 220.0).clamp(240.0, 640.0);
+    let mut picked = None;
+    egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+        for (cls, label) in [(AnimClass::Entrance, "Entrance"), (AnimClass::Emphasis, "Emphasis"), (AnimClass::Exit, "Exit"), (AnimClass::Path, "Motion Paths")] {
+            ui.label(egui::RichText::new(label).font(crate::theme::bold(12.0)));
+            ui.horizontal_wrapped(|ui| {
+                for a in deckcraft_model::anim::ANIMATIONS.iter().filter(|a| a.2 == cls) {
+                    let (r, resp) = ui.allocate_exact_size(vec2(56.0, 54.0), egui::Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(r, CornerRadius::same(4), t.hover);
+                    }
+                    crate::ribbon::paint_anim_tile(ui.painter(), r.shrink(2.0), a.1, a.2, true);
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, a.1));
+                    if resp.on_hover_text(a.1).clicked() {
+                        picked = Some((a.0, a.2));
+                    }
+                }
+            });
+        }
+    });
+    if let Some((effect, class)) = picked {
+        let _ = app.run(cmd, serde_json::json!({"effect": effect, "class": class.xml()}));
+        auto_animation(app);
+        ui.close();
+    }
+}

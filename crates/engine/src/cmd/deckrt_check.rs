@@ -58,8 +58,9 @@ fn shape_name(sh: &Shape) -> String {
 
 fn check(s: &mut Session, _p: &Value) -> Result<Value> {
     let doc = s.doc()?.doc.clone();
+    let dir = s.doc()?.path.as_deref().and_then(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf()));
     let mut out = Out { items: vec![] };
-    media(&doc, &mut out);
+    media(&doc, dir.as_deref(), &mut out);
     fonts(&doc, &mut out);
     text_and_bounds(&doc, &mut out);
     interactive(&doc, &mut out);
@@ -71,7 +72,32 @@ fn check(s: &mut Session, _p: &Value) -> Result<Value> {
 
 // ---------------------------------------------------------------------------------------------
 
-fn media(doc: &Presentation, out: &mut Out) {
+/// Where a linked clip's file is: a `file:` address made a path (PowerPoint writes
+/// `file:///C:\…`), and a relative path taken from the deck's folder. `None` for a web address.
+pub fn linked_path(link: &str, dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let l = link.trim();
+    let lower = l.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return None;
+    }
+    let raw = if lower.starts_with("file:") {
+        let rest = l.get(5..).unwrap_or("").trim_start_matches('/');
+        // A drive letter keeps no leading slash (C:/…); elsewhere the path starts at /.
+        let path = if rest.get(1..2) == Some(":") { rest.to_string() } else { format!("/{rest}") };
+        path.replace("%20", " ")
+    } else {
+        l.to_string()
+    };
+    let p = std::path::PathBuf::from(&raw);
+    if p.is_relative()
+        && let Some(d) = dir
+    {
+        return Some(d.join(p));
+    }
+    Some(p)
+}
+
+fn media(doc: &Presentation, dir: Option<&std::path::Path>, out: &mut Out) {
     for (i, sl) in doc.slides.iter().enumerate() {
         deckcraft_model::walk(&sl.shapes, &mut |sh, _| {
             let ShapeKind::Media(clip) = &sh.kind else { return };
@@ -82,7 +108,9 @@ fn media(doc: &Presentation, out: &mut Out) {
             };
             let bytes: deckcraft_media::Bytes = if m.data.is_empty() {
                 match m.link.as_deref() {
-                    Some(link) => match crate::io::read_file(link) {
+                    // A clip that plays from the web isn't checked here.
+                    Some(link) if linked_path(link, dir).is_none() => return,
+                    Some(link) => match crate::io::read_file(&linked_path(link, dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()) {
                         Ok(b) => std::sync::Arc::new(b),
                         Err(_) => {
                             out.push(

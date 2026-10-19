@@ -68,7 +68,9 @@ fn name_of(sh: &Shape) -> String {
 /// 13-digit national ID.
 pub fn patient_marks(text: &str) -> Vec<String> {
     let mut out = vec![];
-    let lower = text.to_lowercase();
+    // Lowercased one character at a time, so its byte offsets are the text's own (lowercasing
+    // can change a character's length).
+    let lower: String = text.chars().map(|c| c.to_lowercase().next().filter(|l| l.len_utf8() == c.len_utf8()).unwrap_or(c)).collect();
     for key in ["hn", "mrn", "patient id", "hospital number", "dob", "date of birth", "เลขที่ผู้ป่วย", "เลขประจำตัว"] {
         let mut from = 0;
         while let Some(i) = lower[from..].find(key) {
@@ -256,6 +258,16 @@ fn privacy(s: &mut Session, _p: &Value) -> Result<Value> {
             items.push(item("note", Some(i), None, "This slide is hidden in the show, but it is in the file.".into(), None));
         }
     }
+    // Every other picture the deck holds too: an object's own pictures (a swap's later ones, a
+    // wipe's after, a scrub's), picture fills and backgrounds.
+    for id in crate::media_refs::presentation_media(&doc) {
+        if !with_meta.contains(&id)
+            && let Some(m) = doc.media(id)
+            && has_metadata(&m.data)
+        {
+            with_meta.push(id);
+        }
+    }
     if !with_meta.is_empty() {
         let n = with_meta.len();
         items.push(item(
@@ -350,13 +362,13 @@ fn apply_crops(s: &mut Session, p: &Value) -> Result<Value> {
             let Some((bytes, ct)) = encode_like(&m.data, &cut) else { continue };
             let name = format!("cropped-{}", m.name);
             let Some(new_id) = doc.add_media(&name, ct, bytes) else { continue };
-            if let Some(sh) = deckcraft_model::find_shape_mut(&mut Arc::make_mut(&mut doc.slides[i]).shapes, id)
-                && let ShapeKind::Picture { fill } = &mut sh.kind
-            {
-                fill.media = new_id;
-                // What was padding (negative crop) stays as it was.
-                fill.crop = [crop[0].min(0.0), crop[1].min(0.0), crop[2].min(0.0), crop[3].min(0.0)];
-                done += 1;
+            if let Some(sh) = deckcraft_model::find_shape_mut(&mut Arc::make_mut(&mut doc.slides[i]).shapes, id) {
+                replace_picture(sh, media, new_id);
+                if let ShapeKind::Picture { fill } = &mut sh.kind {
+                    // What was padding (negative crop) stays as it was.
+                    fill.crop = [crop[0].min(0.0), crop[1].min(0.0), crop[2].min(0.0), crop[3].min(0.0)];
+                    done += 1;
+                }
             }
         }
         Ok(done)
@@ -393,6 +405,22 @@ fn remove_notes(s: &mut Session, _p: &Value) -> Result<Value> {
         Ok(n)
     })?;
     Ok(json!({"slides": n}))
+}
+
+/// Put `new` in place of `old` everywhere the shape names it, so the original picture leaves the
+/// file: the picture itself, the original kept under an artistic effect (dropped, with the
+/// effect left baked in), and an interactive object's own pictures in its tag (a swap, wipe or
+/// scrub draws those in the show).
+fn replace_picture(sh: &mut deckcraft_model::Shape, old: MediaId, new: MediaId) {
+    if let ShapeKind::Picture { fill } = &mut sh.kind {
+        fill.media = new;
+        fill.artistic = None;
+    }
+    crate::media_refs::visit_mut::tags(&mut sh.tags, &mut |m: &mut MediaId| {
+        if *m == old {
+            *m = new;
+        }
+    });
 }
 
 fn blur_area(s: &mut Session, p: &Value) -> Result<Value> {
@@ -464,10 +492,8 @@ fn blur_area(s: &mut Session, p: &Value) -> Result<Value> {
         let name = format!("blurred-{}", m.name);
         let (bytes, ct) = encode_like(&original, &image::DynamicImage::ImageRgba8(img)).ok_or_else(|| EngineError::Other("the picture can't be saved".into()))?;
         let new_id = doc.add_media(&name, ct, bytes).ok_or_else(|| EngineError::Other("no room for another picture".into()))?;
-        if let Some(sh) = deckcraft_model::find_shape_mut(&mut Arc::make_mut(&mut doc.slides[slide]).shapes, id)
-            && let ShapeKind::Picture { fill } = &mut sh.kind
-        {
-            fill.media = new_id;
+        if let Some(sh) = deckcraft_model::find_shape_mut(&mut Arc::make_mut(&mut doc.slides[slide]).shapes, id) {
+            replace_picture(sh, media, new_id);
         }
         Ok(())
     })?;

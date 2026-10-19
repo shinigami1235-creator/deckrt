@@ -167,8 +167,13 @@ pub fn ranking(option_count: usize, ranks: &BTreeMap<String, Vec<usize>>) -> Vec
     let mut sum = vec![0f64; option_count];
     let n = ranks.len();
     for order in ranks.values() {
-        let mut placed: Vec<usize> = order.iter().copied().filter(|&o| o < option_count).collect();
-        placed.dedup();
+        // Each option once, in the order first placed (a phone could send one twice).
+        let mut placed: Vec<usize> = vec![];
+        for &o in order {
+            if o < option_count && !placed.contains(&o) {
+                placed.push(o);
+            }
+        }
         for o in 0..option_count {
             if !placed.contains(&o) {
                 placed.push(o);

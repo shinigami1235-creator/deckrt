@@ -1293,6 +1293,12 @@ fn poll_bg(doc: &Presentation, idx: usize) -> Color32 {
     Color32::from_rgb(c.r, c.g, c.b)
 }
 
+/// Whether a text box (a number being typed into a box, say) has the keyboard, so the show's keys
+/// should leave it alone.
+pub(crate) fn typing(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.focused()).is_some_and(|id| egui::text_edit::TextEditState::load(ctx, id).is_some())
+}
+
 /// An object's shortcut key, pressed in either window. Returns whether a key was taken.
 pub(crate) fn shortcut(
     ext: &mut Ext,
@@ -1579,7 +1585,7 @@ pub(crate) fn presenter_rows(
                     }
                     let mut d = *dose;
                     let unit = c.products.get(*product).map(|p| p.unit.as_str()).unwrap_or("");
-                    if ui.add(egui::DragValue::new(&mut d).speed(0.1).range(0.0..=1000.0).max_decimals(2).suffix(format!(" {unit}"))).changed()
+                    if ui.add(egui::DragValue::new(&mut d).update_while_editing(false).speed(0.1).range(0.0..=1000.0).max_decimals(2).suffix(format!(" {unit}"))).changed()
                         && let Some(ObjectState { st: TypeState::InjectionMap { dose, .. }, .. }) = ext.states.get_mut(&it.id)
                     {
                         *dose = d;

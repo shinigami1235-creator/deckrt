@@ -1225,7 +1225,7 @@ pub fn section(ui: &mut Ui, ext: &mut Ext, rect: egui::Rect) -> f32 {
             ui.horizontal(|ui| {
                 dim(ui, "Holders at once");
                 let mut n = ph.queue.max as i32;
-                if ui.add(egui::DragValue::new(&mut n).range(1..=20)).changed() {
+                if ui.add(egui::DragValue::new(&mut n).update_while_editing(false).range(1..=20)).changed() {
                     ph.set_max_holders(n.max(1) as usize);
                 }
                 if !ph.queue.holders.is_empty() && button(ui, "Take all back").clicked() {

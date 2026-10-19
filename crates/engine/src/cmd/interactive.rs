@@ -652,6 +652,34 @@ pub const IMPORTED_DIALOG: &str = "deckrt.imported";
 
 /// `file.open` hook: import the deck's old sidecar once, as the earlier deckrt would have, and
 /// tell the user what came over.
+/// deckrt: after any edit, objects anchored to a shape that moved move with it (and an object
+/// moved by hand learns its new offset), on every slide the edit changed.
+pub fn follow_anchors(old: &deckcraft_model::Presentation, doc: &mut deckcraft_model::Presentation) {
+    for (i, sl) in doc.slides.iter_mut().enumerate() {
+        let Some(before) = old.slides.get(i).filter(|o| o.id == sl.id && !std::sync::Arc::ptr_eq(o, sl)) else { continue };
+        let anchored = sl.shapes.iter().any(|sh| obj::read(sh).is_some_and(|o| o.anchor.is_some()));
+        if !anchored {
+            continue;
+        }
+        let mut shapes = sl.shapes.clone();
+        deckcraft_interactive::anchor::follow(&before.shapes, &mut shapes);
+        if shapes != sl.shapes {
+            std::sync::Arc::make_mut(sl).shapes = shapes;
+        }
+    }
+}
+
+/// deckrt: copied objects anchored to a shape copied with them follow the copy; an anchor to a
+/// shape left behind is dropped.
+pub fn remap_anchors(shapes: &mut [Shape], map: &std::collections::HashMap<ShapeId, ShapeId>) {
+    for sh in shapes.iter_mut() {
+        let Some(mut o) = obj::read(sh) else { continue };
+        let Some(a) = o.anchor else { continue };
+        o.anchor = map.get(&a.shape_id()).map(|n| Anchor { shape: n.0, ..a });
+        obj::write(sh, &o);
+    }
+}
+
 pub fn after_open(s: &mut Session) {
     let Some(path) = pending_sidecar(s) else { return };
     let file_name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "the .deckrt file".into());

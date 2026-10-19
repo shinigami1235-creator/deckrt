@@ -646,6 +646,7 @@ impl Session {
         let mut sel = st.selection.clone();
         let r = f(&mut doc, &mut sel)?;
         connect::reroute(&mut doc, &sel);
+        cmd::interactive::follow_anchors(&st.doc, &mut doc); // deckrt hook: objects move with their shape
         st.doc = Arc::new(doc);
         st.selection = sel;
         st.revision += 1;

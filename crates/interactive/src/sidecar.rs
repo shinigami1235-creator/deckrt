@@ -352,6 +352,11 @@ fn string(v: &serde_json::Value, key: &str) -> String {
 pub fn convert(o: &OldObject, dir: &Path, load: &mut dyn FnMut(&Path) -> Option<MediaId>) -> Result<(Config, Option<MediaId>), Resolution> {
     let c = &o.config;
     let mut load_rel = |rel: &str| -> Result<MediaId, Resolution> {
+        // Only files in the sidecar's own folder or below it: no absolute paths, no `..`.
+        let inside = std::path::Path::new(rel).components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir));
+        if !inside {
+            return Err(Resolution::AssetMissing(rel.to_string()));
+        }
         let p = dir.join(rel);
         load(&p).ok_or_else(|| Resolution::AssetMissing(rel.to_string()))
     };

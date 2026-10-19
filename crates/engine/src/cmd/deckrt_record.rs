@@ -132,6 +132,14 @@ fn clear_narration(s: &mut Session, p: &Value) -> Result<Value> {
     let all = str_param(p, "scope") == Some("all");
     let timings = p.get("timings").and_then(Value::as_bool).unwrap_or(false);
     let current = s.doc()?.selection.slide;
+    // Nothing to clear: no edit, so no empty undo step.
+    let any = s.doc()?.doc.slides.iter().enumerate().any(|(i, sl)| {
+        (all || i == current)
+            && (sl.shapes.iter().any(is_narration) || (timings && sl.transition.as_ref().is_some_and(|t| t.advance_after_ms.is_some())))
+    });
+    if !any {
+        return Ok(json!({"slides": 0}));
+    }
     let n = s.edit(|doc, _| {
         let mut n = 0;
         for (i, sl) in doc.slides.iter_mut().enumerate() {

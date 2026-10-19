@@ -40,6 +40,7 @@ pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
                 app.deckrt.blur = None;
             } else if let Some(id) = picture {
                 app.deckrt.blur = Some(BlurTool { target: id, start: None, cur: None });
+                app.deckrt.blur_doc = app.session.active().map(|d| d.uid);
                 app.set_status("Drag over the part of the picture to blur. Esc stops.");
             }
         }
@@ -62,6 +63,11 @@ fn picture_rect(app: &SlideApp, id: u32, xf: Xf) -> Option<Rect> {
 /// The canvas pointer while Blur Area is on. Returns whether it took the event.
 pub fn pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -> bool {
     let Some(tool) = app.deckrt.blur.as_ref() else { return false };
+    // Another deck came forward: the picture picked belongs to the first one.
+    if app.session.active().map(|d| d.uid) != app.deckrt.blur_doc {
+        app.deckrt.blur = None;
+        return false;
+    }
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.deckrt.blur = None;
         app.set_status("");

@@ -36,7 +36,7 @@ mod imp {
     };
     use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GWL_EXSTYLE, GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+        EnumWindows, GWL_EXSTYLE, GetSystemMetrics, IsHungAppWindow, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
         SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
         WS_EX_TOOLWINDOW,
     };
@@ -64,7 +64,8 @@ mod imp {
     fn worth_showing(h: HWND, own: u32) -> Option<(String, RECT, RECT)> {
         // SAFETY: plain queries on a window handle EnumWindows just gave.
         unsafe {
-            if !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() {
+            // A program that isn't responding would hold up PrintWindow, so it is left out.
+            if !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() || IsHungAppWindow(h).as_bool() {
                 return None;
             }
             if GetWindowLongW(h, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0 {
@@ -137,16 +138,22 @@ mod imp {
             let bmp = CreateCompatibleBitmap(screen, w, hh);
             let old = SelectObject(dc, HGDIOBJ::from(bmp));
             let ok = PrintWindow(h, dc, PW_RENDERFULLCONTENT).as_bool();
-            let px = if ok { read(dc, bmp, w, hh) } else { None };
+            // GetDIBits wants the bitmap out of the DC first.
             SelectObject(dc, old);
+            let px = if ok { read(dc, bmp, w, hh) } else { None };
             let _ = DeleteObject(HGDIOBJ::from(bmp));
             let _ = DeleteDC(dc);
             ReleaseDC(None, screen);
             px
         }?;
         // The visible frame inside the window rect (Windows 10 and 11 add invisible borders).
-        let (ox, oy) = ((fr.left - wr.left).clamp(0, w), (fr.top - wr.top).clamp(0, hh));
-        let (cw, ch) = ((fr.right - fr.left).clamp(1, w - ox), (fr.bottom - fr.top).clamp(1, hh - oy));
+        // The frame inside the window rect; a frame that doesn't fit (a DPI-scaled window) keeps
+        // the whole rect.
+        let (mut ox, mut oy) = (fr.left - wr.left, fr.top - wr.top);
+        let (mut cw, mut ch) = (fr.right - fr.left, fr.bottom - fr.top);
+        if ox < 0 || oy < 0 || cw < 1 || ch < 1 || ox + cw > w || oy + ch > hh {
+            (ox, oy, cw, ch) = (0, 0, w, hh);
+        }
         let mut out = Vec::with_capacity((cw * ch * 4) as usize);
         for y in oy..oy + ch {
             let a = ((y * w + ox) * 4) as usize;
@@ -223,8 +230,8 @@ mod imp {
             let bmp = CreateCompatibleBitmap(screen, w, h);
             let old = SelectObject(dc, HGDIOBJ::from(bmp));
             let ok = BitBlt(dc, 0, 0, w, h, Some(screen), x, y, SRCCOPY | CAPTUREBLT).is_ok();
-            let px = if ok { read(dc, bmp, w, h) } else { None };
             SelectObject(dc, old);
+            let px = if ok { read(dc, bmp, w, h) } else { None };
             let _ = DeleteObject(HGDIOBJ::from(bmp));
             let _ = DeleteDC(dc);
             ReleaseDC(None, screen);

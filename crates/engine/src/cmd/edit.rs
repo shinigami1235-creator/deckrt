@@ -68,27 +68,13 @@ fn slides_scope(s: &Session, p: &Value) -> bool {
 }
 
 pub(crate) fn media_of_shapes(shapes: &[Shape], out: &mut Vec<MediaId>) {
-    deckcraft_model::walk(shapes, &mut |s, _| {
-        match &s.kind {
-            deckcraft_model::ShapeKind::Picture { fill } => out.push(fill.media),
-            deckcraft_model::ShapeKind::Media(m) => {
-                out.push(m.media);
-                if let Some(p) = m.poster {
-                    out.push(p);
-                }
-            }
-            deckcraft_model::ShapeKind::Model3d { media, poster } => {
-                out.push(*media);
-                if let Some(p) = poster {
-                    out.push(*p);
-                }
-            }
-            _ => {}
+    // deckrt hook: every reference (crate::media_refs), interactive objects' tag media and 3D
+    // models included, so a paste into another deck brings them all.
+    for id in crate::media_refs::shapes_media(shapes) {
+        if !out.contains(&id) {
+            out.push(id);
         }
-        if let Some(deckcraft_model::Fill::Picture(pf)) = &s.fill {
-            out.push(pf.media);
-        }
-    });
+    }
 }
 
 fn copy_inner(s: &mut Session, p: &Value) -> Result<String> {
@@ -207,6 +193,7 @@ pub(crate) fn reid(cmd: &str, doc: &mut deckcraft_model::Presentation, shapes: &
     }
     let mut map = HashMap::new();
     rec(cmd, doc, shapes, &mut map, 0)?;
+    super::interactive::remap_anchors(shapes, &map); // deckrt hook: anchors follow the copies
     walk_mut(shapes, &mut |s| {
         if let deckcraft_model::ShapeKind::Connector { start, end } = &mut s.kind {
             for e in [start, end] {
@@ -249,25 +236,11 @@ fn remap_media(shapes: &mut [Shape], map: &HashMap<MediaId, MediaId>) {
     if map.is_empty() {
         return;
     }
-    let m = |id: &mut MediaId| {
+    // deckrt hook: every reference (crate::media_refs), interactive objects' tag media and 3D
+    // models included.
+    crate::media_refs::visit_mut::shapes(shapes, &mut |id: &mut MediaId| {
         if let Some(n) = map.get(id) {
             *id = *n;
-        }
-    };
-    walk_mut(shapes, &mut |s| {
-        match &mut s.kind {
-            deckcraft_model::ShapeKind::Picture { fill } => m(&mut fill.media),
-            deckcraft_model::ShapeKind::Media(c) => {
-                m(&mut c.media);
-                if let Some(p) = c.poster.as_mut() {
-                    m(p);
-                }
-            }
-            deckcraft_model::ShapeKind::Opaque { preview: Some(p), .. } => m(p),
-            _ => {}
-        }
-        if let Some(deckcraft_model::Fill::Picture(pf)) = &mut s.fill {
-            m(&mut pf.media);
         }
     });
 }

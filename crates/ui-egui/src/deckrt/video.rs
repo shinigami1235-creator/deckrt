@@ -129,6 +129,15 @@ fn render(doc: &Presentation, slide: usize, w: u32, h: u32) -> Vec<u8> {
 
 /// Write the video. Runs on its own thread.
 fn export(doc: Arc<Presentation>, segs: Vec<Seg>, path: PathBuf, opts: Options, progress: Arc<Mutex<Progress>>, cancel: Arc<AtomicBool>) -> Result<PathBuf, String> {
+    // A failed export leaves no half-written MP4 behind.
+    let r = export_to(doc, segs, path.clone(), opts, progress, cancel);
+    if r.is_err() {
+        let _ = std::fs::remove_file(&path);
+    }
+    r
+}
+
+fn export_to(doc: Arc<Presentation>, segs: Vec<Seg>, path: PathBuf, opts: Options, progress: Arc<Mutex<Progress>>, cancel: Arc<AtomicBool>) -> Result<PathBuf, String> {
     let mut w = Writer::create(&path, &opts)?;
     let (fw, fh) = (opts.width, opts.height);
     let dt = SECOND / opts.fps as i64;
@@ -195,7 +204,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         ui.add_enabled(timed || narrated > 0, egui::Checkbox::new(&mut v.use_timings, "Use recorded timings and narration"));
         ui.horizontal(|ui| {
             ui.label("Seconds on a slide with no timing");
-            ui.add(egui::DragValue::new(&mut v.default_secs).range(1.0..=120.0).speed(0.5));
+            ui.add(egui::DragValue::new(&mut v.default_secs).update_while_editing(false).range(1.0..=120.0).speed(0.5));
         });
     });
     ui.add_space(6.0);
