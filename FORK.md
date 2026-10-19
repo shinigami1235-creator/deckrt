@@ -136,6 +136,7 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/show.rs` (round 8) | presenter view's columns come from `deckrt::notes::columns` and its right column from `deckrt::notes::right_column`; `notes_px` is `pub(crate)` and `NOTES_MAX` is 72; `state_for`, `quad_mesh` and `part_textures` are `pub(crate)` for the canvas preview; `next_rect` is kept for its test |
 | `crates/ui-egui/src/lib.rs` (round 8) | `deckrt::screenshot::frame` each frame for Screen Clipping's window |
 | `crates/ui-egui/src/backstage.rs` (round 8) | the sample deck's tile on File › New |
+| `crates/ui-egui/src/ribbon.rs`, `menus.rs` (round 8) | Present in Presenter View after Presenter View on the Slide Show tab, and Alt+F5 for it (`deckrt::show::present_in_presenter_view`) |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -276,6 +277,9 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   instead of hiding the main window, since a hidden or minimised window stops getting frames.
   On Windows before 10 version 2004 deckrt shows in the copy. The clipping window covers the
   display deckrt is on.
+- Present in Presenter View (Alt+F5, as in PowerPoint) keeps presenter view on one screen: it
+  covers the display and the show stays in the editor's window behind it instead of going full
+  screen over it.
 - The sample deck in the program is built only from pictures and a model drawn in code, so it
   can ship to anyone. Gid's own sample deck (with figures from his lectures) stays out of the
   repository.

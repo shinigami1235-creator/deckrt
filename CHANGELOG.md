@@ -17,6 +17,8 @@ in the test build so far.
 - **Pictures in the Insert menus** for Chart, WordArt, Action and SmartArt.
 - **Insert › Screenshot**: pictures of your open windows, and Screen Clipping.
 - **The sample deck** is in File › New: one slide for each feature, with notes to read aloud.
+- **Present in Presenter View** (Slide Show tab, or Alt+F5) opens presenter view on one screen,
+  so you can see it and practise without a projector.
 
 ## 0.1.0 (2026-10-18)
 

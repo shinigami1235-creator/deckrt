@@ -104,6 +104,8 @@ pub struct Ext {
     pub captions_tried: bool,
     /// Record: asked for when the show starts, then recording.
     pub record_wanted: bool,
+    /// Present in Presenter View: presenter view on one screen too, to see it without a projector.
+    pub practice: bool,
     pub record: Option<super::record::Live>,
     /// Presses of Next each object has taken on this slide.
     pub next_used: BTreeMap<u32, u32>,
@@ -165,6 +167,7 @@ impl Default for Ext {
             captions: None,
             captions_tried: false,
             record_wanted: false,
+            practice: false,
             record: None,
             next_used: BTreeMap::new(),
             opened: None,
@@ -1645,12 +1648,42 @@ pub fn place_show(ctx: &egui::Context, show: &mut Show, displays: Vec<DisplayInf
         }
         _ => {
             // One screen: the show alone, as PowerPoint does, unless recording or the coach
-            // needs presenter view's controls.
-            if show.ext.displays.len() == 1 && !show.ext.record_wanted && !show.ext.coach_wanted {
+            // needs presenter view's controls, or Present in Presenter View asked for it. Then
+            // presenter view covers the screen, over the show.
+            if show.ext.displays.len() == 1 && !show.ext.record_wanted && !show.ext.coach_wanted && !show.ext.practice {
                 show.presenter = false;
+            }
+            if show.ext.practice {
+                // The show stays in the editor's window, behind presenter view, rather than
+                // full screen over it.
+                show.presenter = true;
+                show.ext.presenter_display = show.ext.displays.first().map(|d| d.index);
+                return;
             }
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true))
         }
+    }
+}
+
+/// Slide Show › Present in Presenter View (Alt+F5): the show from the current slide with presenter
+/// view, on one screen as well as two.
+pub fn present_in_presenter_view(app: &mut SlideApp) {
+    let from = app.session.active().map(|d| d.selection.slide).unwrap_or(0);
+    app.start_show(from, false);
+    if let Some(s) = app.show.as_mut() {
+        s.ext.practice = true;
+        s.presenter = true;
+    }
+}
+
+/// The Slide Show tab's button for it, after Presenter View.
+pub fn practice_button(app: &mut SlideApp, ui: &mut Ui) {
+    let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
+    if crate::widgets::big_button(ui, crate::icons::Icon::PresenterView, "Present in\nPresenter View", en)
+        .on_hover_text("Presenter view on this screen, with no projector needed (Alt+F5)")
+        .clicked()
+    {
+        present_in_presenter_view(app);
     }
 }
 
@@ -2007,6 +2040,21 @@ mod tests {
         assert!(take_next(&mut show, &doc, 0.1, &ctx));
         assert!(!open(&show), "the second Next closes it again");
         assert!(!take_next(&mut show, &doc, 0.2, &ctx), "the third Next is the show's");
+    }
+
+    #[test]
+    fn present_in_presenter_view_keeps_presenter_view_on_one_screen() {
+        let doc = deckcraft_model::defaults::new_presentation(None);
+        let ctx = egui::Context::default();
+        let one = || vec![DisplayInfo { index: 0, origin: [0, 0], size_px: [1920, 1080], scale: 1.0, primary: true }];
+        let mut show = Show::new(&doc, 0, false, true);
+        place_show(&ctx, &mut show, one());
+        assert!(!show.presenter, "a plain show on one screen is the show alone");
+        let mut show = Show::new(&doc, 0, false, false);
+        show.ext.practice = true;
+        place_show(&ctx, &mut show, one());
+        assert!(show.presenter);
+        assert_eq!(show.ext.presenter_display, Some(0), "presenter view covers the one screen");
     }
 
     #[test]

@@ -16,6 +16,11 @@ pub fn ui_shortcut(app: &mut SlideApp, key: egui::Key, m: Mods) -> bool {
         return true;
     }
     let id = match (key, m.cmd, m.shift, m.alt) {
+        // deckrt hook: Alt+F5 is Present in Presenter View, as in PowerPoint.
+        (F5, false, false, true) => {
+            crate::deckrt::show::present_in_presenter_view(app);
+            return true;
+        }
         (F5, _, false, _) => {
             app.start_show(app.show_start_index(), false);
             return true;

@@ -2068,6 +2068,7 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
         if big_button_ex(ui, Icon::PresenterView, "Presenter\nView", true, false, on).0.clicked() {
             app.ui.presenter_view = !on;
         }
+        crate::deckrt::show::practice_button(app, ui); // deckrt hook: Present in Presenter View
         big(app, ui, Icon::CustomShow, "Custom\nShow", "app.dialog", json!({"id": "customShow"}));
         crate::deckrt::check::ribbon_button(app, ui); // deckrt hook
         crate::deckrt::captions::ribbon_button(app, ui); // deckrt hook
