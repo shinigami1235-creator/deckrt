@@ -503,7 +503,13 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                 let size = st.get("size").and_then(Value::as_f64);
                 let fams = font_families(app);
                 let theme_fonts: Vec<String> = fams.iter().take(2).cloned().collect();
-                dropdown(ui, "font", &font, 150.0, en, |ui| {
+                // deckrt hook: a list wide enough for the names, with Add Fonts at the top.
+                widgets::dropdown_wide(ui, "font", &font, 150.0, 260.0, en, |ui| {
+                    if ui.button("Add Fonts…").on_hover_text("A .ttf, .otf or a .zip of fonts. Dropping one on the window works too.").clicked() {
+                        ui.close();
+                        crate::deckrt::fonts::add_fonts_dialog(app);
+                    }
+                    ui.separator();
                     for (k, f) in fams.iter().enumerate() {
                         let label = if k == 0 && theme_fonts.len() == 2 {
                             format!("{f} (Headings)")
@@ -526,6 +532,7 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                         run(app, "font.rescan", json!({}));
                         ui.close();
                     }
+
                 });
                 let size_text = size.map(|s| widgets::fmt_num(s, "")).unwrap_or_default();
                 dropdown(ui, "size", &size_text, 52.0, en, |ui| {

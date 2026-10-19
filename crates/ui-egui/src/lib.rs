@@ -1589,6 +1589,8 @@ impl SlideApp {
         for f in ctx.input(|i| i.raw.dropped_files.clone()) {
             let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped file".into());
             match f.bytes() {
+                // deckrt hook: a font or a .zip of fonts is added to the computer's fonts.
+                Ok(bytes) if crate::deckrt::fonts::dropped(self, f.path(), &name, &bytes) => {}
                 Ok(bytes) => self.open_or_insert_bytes(&name, &bytes),
                 Err(e) => self.set_status(e),
             }

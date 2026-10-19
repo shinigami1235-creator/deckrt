@@ -127,6 +127,7 @@ fn services() -> Services {
         pick_open_many: Some(Box::new(|purpose: &str| {
             let d = match purpose {
                 "model" => rfd::FileDialog::new().add_filter("3D models", &deckcraft_model3d::convert::MODEL_EXTS),
+                "fonts" => rfd::FileDialog::new().add_filter("Fonts", &["ttf", "otf", "ttc", "otc", "zip"]),
                 _ => rfd::FileDialog::new().add_filter("Pictures", &deckcraft_ui_egui::deckrt::IMAGE_EXTS),
             };
             d.pick_files().map(|v| v.iter().map(|p| p.to_string_lossy().to_string()).collect()).unwrap_or_default()

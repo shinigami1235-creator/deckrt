@@ -9,6 +9,8 @@ description = "DeckCraft engine: sessions, undo history, selection, the command 
 workspace = true
 
 [dependencies]
+# deckrt: Add Fonts takes the .zip files font sites hand out.
+zip = { workspace = true }
 deckcraft-geom = { workspace = true }
 deckcraft-color = { workspace = true }
 deckcraft-model = { workspace = true }
@@ -31,7 +33,6 @@ image = { workspace = true }
 
 [dev-dependencies]
 deckcraft-anim = { workspace = true }
-zip = { workspace = true }
 
 # The browser clock for comment timestamps (wasm has no std::time::SystemTime).
 [target.'cfg(target_arch = "wasm32")'.dependencies]

@@ -42,6 +42,8 @@ current) does not apply here.
 | `crates/ui-egui/src/deckrt/preview.rs` | Transition preview on the editor canvas, AutoPreview, gallery tiles that play their effect under the pointer |
 | `crates/ui-egui/src/deckrt/insert_previews.rs` | Pictures in the Chart, Change Chart Type, WordArt and Action menus (drawn from a scratch deck with the open deck's theme) and the SmartArt dialog |
 | `crates/show-ext/src/capture.rs`, `crates/ui-egui/src/deckrt/screenshot.rs` | Insert › Screenshot: window pictures (`PrintWindow`), the screen (`BitBlt`, deckrt's windows left out with `WDA_EXCLUDEFROMCAPTURE`), Screen Clipping's window; `DECKRT_SCREEN_TEST=<png>` stands in for the screen |
+| `crates/engine/src/cmd/deckrt_fonts.rs`, `crates/ui-egui/src/deckrt/fonts.rs`, `crates/show-ext/src/fonts.rs` | Add Fonts: `font.install` copies font files and the fonts in a .zip into the user fonts folder (`deckcraft_fonts::user_font_dir`) and adds them for the session; on Windows each is listed under `HKCU\…\CurrentVersion\Fonts`, loaded with `AddFontResourceW` and announced with `WM_FONTCHANGE` |
+| `.github/workflows/mac-build.yml`, `packaging/macos-deckrt/` | The Mac build: a universal `deckrt.app` signed ad hoc with the microphone entitlement, on `deckrt-macos.dmg`, published as the `latest-mac-build` pre-release |
 | `packaging/sample/`, `assets/sample/deckrt-feature-tour.pptx`, `crates/engine/src/cmd/deckrt_sample.rs` | The sample deck: drawn pictures and model, the build script, the deck embedded in the program and opened by `deckrt.openSample` |
 | `crates/phones/phone/test/page-test.mjs` | Runs the phone page inside jsdom against a running show (join, vote, ask for control); needs Node and `npm install jsdom ws`. Not part of `cargo test` |
 
@@ -138,7 +140,11 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/backstage.rs` (round 8) | the sample deck's tile on File › New |
 | `crates/ui-egui/src/ribbon.rs`, `menus.rs` (round 8) | Present in Presenter View after Presenter View on the Slide Show tab, and Alt+F5 for it (`deckrt::show::present_in_presenter_view`) |
 | `crates/engine/src/cmd/mod.rs`, `insert.rs` (round 9) | `pub mod deckrt_wordart;`; `insert.wordArt` styles its text with PowerPoint's twenty styles (`deckrt_wordart::apply`) |
-| `crates/engine/src/soak_tests.rs` (round 9) | the soak test skips `deckrt.openSample`, which opens a second document as `file.new` does |
+| `crates/engine/src/soak_tests.rs` (round 9) | the soak test skips `deckrt.openSample`, which opens a second document as `file.new` does, and `font.install`, which writes into the fonts folder |
+| `crates/fonts/src/fontdb.rs`, `lib.rs` (round 9) | `faces_in` (the families and styles in a font file) and `user_font_dir`, for Add Fonts |
+| `crates/engine/Cargo.toml` (round 9) | `zip` is a dependency, not only a dev-dependency, for the .zip files Add Fonts takes |
+| `crates/ui-egui/src/lib.rs` (round 9) | a dropped font or .zip of fonts goes to `deckrt::fonts::dropped` before the file is opened |
+| `apps/deckcraft/src/main.rs` (round 9) | `pick_open_many("fonts")` filters for font files and .zip files |
 | `crates/ui-egui/src/widgets.rs` (round 9) | `group_named` and `group_launcher`: every ribbon group has its name under it and the lines between groups are drawn once all are placed (a name starting with `+` carries on the group before); `framed_gallery` is PowerPoint's in-ribbon gallery with the up, down and More arrows; `chevron_up` |
 | `crates/ui-egui/src/ribbon.rs` (round 9) | PowerPoint's group names on every tab; Font, Paragraph, Drawing and Shape Styles have corner arrows (the Font… and Paragraph… buttons are gone); Home's Drawing group shows the shapes inline (`deckrt::shapes::inline`) and its Picture group is gone; Editing is Find, Replace (Replace Fonts under its arrow) and Select (Selection Pane under it); the themes, variants, transitions and animations are framed galleries; Timing has Reorder Animation; Insert › Chart and Change Chart Type open the Insert Chart dialog; `shapes_gallery` is `deckrt::shapes::gallery`; a click on the open tab never hides the ribbon (a double-click does); tabs carry their names for screen readers |
 | `crates/ui-egui/src/dialogs.rs` (round 9) | `smartart`, `chart` and `chartType` are `deckrt::insert_previews::smartart_dialog` and `chart_dialog` |

@@ -466,6 +466,11 @@ pub fn rows<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// A text dropdown field (font name, size): shows `current`, opens a popup with `add_items`.
 pub fn dropdown(ui: &mut Ui, id: &str, current: &str, width: f32, enabled: bool, add_items: impl FnOnce(&mut Ui)) -> Response {
+    dropdown_wide(ui, id, current, width, width.max(140.0), enabled, add_items)
+}
+
+/// deckrt: a dropdown whose list is wider than its field (the font list, so names fit on a line).
+pub fn dropdown_wide(ui: &mut Ui, id: &str, current: &str, width: f32, list_width: f32, enabled: bool, add_items: impl FnOnce(&mut Ui)) -> Response {
     let t = Tokens::get(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 22.0), if enabled { Sense::click() } else { Sense::hover() });
     let painter = ui.painter_at(rect);
@@ -486,7 +491,7 @@ pub fn dropdown(ui: &mut Ui, id: &str, current: &str, width: f32, enabled: bool,
     );
     chevron(&painter, pos2(rect.max.x - 9.0, rect.center().y), 3.0, t.text_dim);
     let _ = id;
-    egui::Popup::menu(&resp).width(width.max(140.0)).show(|ui| {
+    egui::Popup::menu(&resp).width(list_width).show(|ui| {
         egui::ScrollArea::vertical().max_height(360.0).show(ui, add_items);
     });
     resp

@@ -1,0 +1,151 @@
+# Builds deckrt for the Mac: one app for Apple silicon and Intel Macs, on a disk image.
+#
+# Download: Releases › "deckrt Mac test build" › deckrt-macos.dmg, or
+# https://github.com/shinigami1235-creator/deckrt/releases/download/latest-mac-build/deckrt-macos.dmg
+# Each push to main replaces it. Actions › Mac build › the run › Artifacts has it too.
+#
+# The app is signed ad hoc, not with an Apple Developer ID, so the first time it is opened macOS
+# says it can't check it: System Settings › Privacy & Security › Open Anyway. After that it opens
+# like any other app.
+
+name: Mac build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  # write: each push replaces the "latest-mac-build" pre-release.
+  contents: write
+
+concurrency:
+  group: mac-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: always
+      # The fonts the app embeds (see crates/fonts/build.rs).
+      CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+      CRAFT_FONTS_REQUIRED: "1"
+      # Keep in step with LSMinimumSystemVersion in packaging/macos-deckrt/Info.plist.in.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Check out deckrt
+        uses: actions/checkout@v4
+        with:
+          path: deckrt
+
+      - name: Check out the fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3
+          path: craft-fonts
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: deckrt -> target
+
+      - name: Version
+        working-directory: deckrt
+        run: |
+          version=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+          echo "DECKRT_VERSION=$version" >> "$GITHUB_ENV"
+          echo "DECKCRAFT_BUILD_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "DECKCRAFT_BUILD_DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      # The compiler's errors are repeated as annotations, which the GitHub API gives back even
+      # when the full log cannot be fetched.
+      - name: Build the app (Apple silicon and Intel)
+        working-directory: deckrt
+        run: |
+          set -o pipefail
+          if ! cargo build --release --locked -p deckcraft --target aarch64-apple-darwin --target x86_64-apple-darwin 2>&1 | tee build.log; then
+            grep -n -A8 '^error' build.log | head -120 | awk 'BEGIN{RS="--\n"} {gsub(/\n/," | "); print "::error::" $0}' | head -10
+            exit 1
+          fi
+
+      - name: Check it starts
+        working-directory: deckrt
+        run: target/aarch64-apple-darwin/release/deckrt --version
+
+      # The Mac's own code paths (its font folders, the displays, the phones' server) and the
+      # fonts install.
+      - name: Run the tests that matter on the Mac
+        working-directory: deckrt
+        run: |
+          set -o pipefail
+          if ! cargo test --release --locked --target aarch64-apple-darwin -p deckcraft-phones -p deckcraft-show-ext -p deckcraft-fonts -p deckcraft-interactive 2>&1 | tee test.log; then
+            grep -n -A8 -E '^(error|---- .* stdout ----|test result: FAILED)' test.log | head -120 | awk 'BEGIN{RS="--\n"} {gsub(/\n/," | "); print "::error::" $0}' | head -10
+            exit 1
+          fi
+
+      - name: Make deckrt.app and the disk image
+        working-directory: deckrt
+        run: |
+          set -euo pipefail
+          short="${DECKRT_VERSION%%-*}"
+          app="dist/deckrt.app"
+          rm -rf dist && mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create -output "$app/Contents/MacOS/deckrt" \
+            target/aarch64-apple-darwin/release/deckrt target/x86_64-apple-darwin/release/deckrt
+          lipo -info "$app/Contents/MacOS/deckrt"
+          cp assets/app-icon/deckcraft.icns "$app/Contents/Resources/deckrt.icns"
+          sed -e "s/@VERSION@/$DECKRT_VERSION/g" -e "s/@SHORT_VERSION@/$short/g" -e "s/@BUILD_SHA@/$GITHUB_SHA/g" \
+            packaging/macos-deckrt/Info.plist.in > "$app/Contents/Info.plist"
+          plutil -lint "$app/Contents/Info.plist"
+          printf 'APPL????' > "$app/Contents/PkgInfo"
+          cp LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$app/Contents/Resources/"
+          # Ad hoc: no Developer ID. The hardened runtime with the microphone entitlement, so
+          # Live Captions and Record can ask for it.
+          codesign --force --sign - --options runtime --timestamp=none \
+            --entitlements packaging/macos-deckrt/entitlements.plist "$app"
+          codesign --verify --strict --verbose=2 "$app"
+          # The disk image: the app beside a link to Applications, to drag it across.
+          stage="dist/dmg"
+          mkdir -p "$stage"
+          cp -R "$app" "$stage/"
+          ln -s /Applications "$stage/Applications"
+          cat > "$stage/Read me.txt" <<'TXT'
+          deckrt for the Mac
+
+          Drag deckrt into Applications, then open it from there.
+
+          The first time, macOS says it can't check deckrt, since it isn't signed with an Apple
+          Developer ID. Open System Settings › Privacy & Security, scroll down to the line about
+          deckrt and click Open Anyway. After that it opens like any other app.
+
+          deckrt is a fork of DeckCraft (MIT OR Apache-2.0). See NOTICE and ATTRIBUTION.md inside
+          the app (Show Package Contents › Contents › Resources).
+          TXT
+          hdiutil create -volname deckrt -srcfolder "$stage" -ov -format UDZO "dist/deckrt-macos.dmg"
+          ls -l dist
+
+      - name: Upload the disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: deckrt-macos
+          path: deckrt/dist/deckrt-macos.dmg
+          if-no-files-found: error
+
+      - name: Publish the Mac test build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: deckrt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest-mac-build --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest-mac-build dist/deckrt-macos.dmg --title "deckrt Mac test build" \
+            --notes "The newest Mac build, from main at $GITHUB_SHA, for Apple silicon and Intel Macs. It changes with every push. The first time you open it: System Settings › Privacy & Security › Open Anyway." \
+            --target "$GITHUB_SHA" --prerelease --latest=false

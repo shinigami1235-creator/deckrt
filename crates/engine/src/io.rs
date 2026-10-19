@@ -67,3 +67,27 @@ pub fn file_len(path: &str) -> Option<u64> {
 pub fn file_len(_path: &str) -> Option<u64> {
     None
 }
+
+/// deckrt: make the folder at `path` and its parents, inside the automation write root when there
+/// is one (Add Fonts makes the user fonts folder when it isn't there yet).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn make_dir(path: &str) -> Result<(), String> {
+    crate::file_access::check_write(path)?;
+    std::fs::create_dir_all(path).map_err(|e| format!("{path}: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn make_dir(path: &str) -> Result<(), String> {
+    Err(format!("{path}: folders are not available in the browser"))
+}
+
+/// deckrt: whether a file is at `path` (false outside the automation read root).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn exists(path: &str) -> bool {
+    crate::file_access::check_read(path).is_ok() && std::path::Path::new(path).exists()
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn exists(_path: &str) -> bool {
+    false
+}

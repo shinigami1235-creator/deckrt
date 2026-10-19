@@ -7,6 +7,7 @@ pub mod captions;
 pub mod coach;
 pub mod crowd;
 pub mod finder;
+pub mod fonts;
 pub mod format_picture;
 pub mod insert_previews;
 pub mod messages;

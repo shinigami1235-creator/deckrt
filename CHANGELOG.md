@@ -28,6 +28,9 @@ in the test build so far.
   uses the same dialog.
 - **The Animation Pane** has the reorder arrows at the top, shows each object's text after its
   name, and the selected effect's arrow opens its menu.
+- **Add Fonts…** in Home › Font's list, or a font dropped on the window: a .ttf, .otf or .zip
+  goes into your own fonts folder, where Word and PowerPoint find it too.
+- **A Mac build**, for Apple silicon and Intel Macs, as a test build.
 - **Fixes from the audit:** typing in a box during the show no longer moves the slides, a click
   on the open tab no longer hides the ribbon, Enter in the SmartArt items no longer inserts the
   graphic, a failed video export leaves no broken file, and the pane's text and number boxes

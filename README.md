@@ -25,6 +25,32 @@ The [test build](https://github.com/shinigami1235-creator/deckrt/releases/tag/la
 the newest work before it becomes a version. It changes every time the code does and may have
 things that are half done.
 
+### On a Mac
+
+The Mac build runs on macOS 11 or later, on Apple silicon and Intel Macs. It is a test build for
+now, made from every change.
+
+1. Download [deckrt-macos.dmg](https://github.com/shinigami1235-creator/deckrt/releases/download/latest-mac-build/deckrt-macos.dmg)
+   and open it.
+2. Drag deckrt into Applications and open it from there.
+3. macOS says it can't check deckrt the first time, since it isn't signed with an Apple Developer
+   ID. Open **System Settings › Privacy & Security**, scroll down to the line about deckrt and
+   click **Open Anyway**.
+
+On the Mac the show doesn't move to a second display by itself yet, Insert › Screenshot has no
+window pictures, and Export to Video needs Windows.
+
+## Fonts
+
+deckrt uses the fonts installed on the computer, from the same folders Word and PowerPoint read:
+the system's fonts, your own, and the Office cloud fonts such as Aptos. On a Mac it also reads the
+fonts inside the Office apps.
+
+To add a font you downloaded, open the font list on the Home tab and choose **Add Fonts…**, or
+drop the .ttf, .otf or .zip file on deckrt's window. It goes into your own fonts folder, the one
+Windows' Install and the Mac's Font Book use, so Word and PowerPoint get it too. Remove it the
+usual way: Settings › Personalization › Fonts on Windows, Font Book on a Mac.
+
 ## What deckrt adds
 
 - Interactive objects on the slide: a 3D model, an image swap, a before-and-after wipe, a zoom

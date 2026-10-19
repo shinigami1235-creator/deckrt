@@ -635,6 +635,26 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
     out
 }
 
+/// deckrt: the family and style of each face in a font file or collection (a variable font: its
+/// named instances), for installing fonts. Empty when `data` isn't a font.
+pub fn faces_in(data: &[u8]) -> Vec<(String, String)> {
+    enumerate_faces(data).into_iter().map(|(_, f, s, _)| (f, s)).collect()
+}
+
+/// deckrt: the per-user fonts folder the system and Office read, where Add Fonts puts fonts:
+/// `%LOCALAPPDATA%\Microsoft\Windows\Fonts` on Windows, `~/Library/Fonts` on a Mac,
+/// `~/.local/share/fonts` elsewhere.
+pub fn user_font_dir() -> Option<std::path::PathBuf> {
+    if cfg!(target_arch = "wasm32") {
+        return None;
+    }
+    if cfg!(windows) {
+        return std::env::var_os("LOCALAPPDATA").map(|l| std::path::PathBuf::from(l).join("Microsoft\\Windows\\Fonts"));
+    }
+    let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
+    Some(if cfg!(target_os = "macos") { home.join("Library/Fonts") } else { home.join(".local/share/fonts") })
+}
+
 /// The compiled-in last-resort face, for a database that somehow has no usable faces at all.
 pub(crate) fn last_resort_face() -> Arc<FontFace> {
     static FACE: std::sync::OnceLock<Arc<FontFace>> = std::sync::OnceLock::new();

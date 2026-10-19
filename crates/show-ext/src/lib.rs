@@ -9,6 +9,7 @@
 
 pub mod capture;
 pub mod displays;
+pub mod fonts;
 
 /// One connected display, in `available_monitors()` order (the index
 /// `egui::ViewportCommand::SetMonitor` takes).
