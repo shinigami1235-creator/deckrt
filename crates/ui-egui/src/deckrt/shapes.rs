@@ -82,11 +82,22 @@ fn paint(p: &egui::Painter, r: Rect, name: &str, t: &Tokens) {
 
 /// The whole menu: the shapes used last, then every category under its name.
 pub fn gallery(ui: &mut Ui) -> Option<&'static str> {
+    menu(ui, false)
+}
+
+/// Change Shape and Crop to Shape: the closed shapes only, as in PowerPoint (a line, a text box
+/// or a freehand tool can't be what a shape turns into).
+pub fn change_gallery(ui: &mut Ui) -> Option<&'static str> {
+    menu(ui, true)
+}
+
+fn menu(ui: &mut Ui, closed_only: bool) -> Option<&'static str> {
     let t = Tokens::get(ui.ctx());
     let mut out = None;
     ui.set_width(330.0);
     let max_h = (ui.ctx().content_rect().height() - ui.cursor().min.y - 16.0).clamp(260.0, 760.0);
-    let recents: Vec<&'static str> = recent(ui.ctx()).iter().filter_map(|n| static_name(n)).collect();
+    let keep = |n: &str| !closed_only || (n != "textBox" && CATALOG.iter().any(|p| p.name == n && p.category != Category::Lines));
+    let recents: Vec<&'static str> = recent(ui.ctx()).iter().filter_map(|n| static_name(n)).filter(|n| keep(n)).collect();
     egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         let mut section = |ui: &mut Ui, title: &str, first: bool, names: &mut dyn Iterator<Item = &'static str>| {
@@ -112,7 +123,10 @@ pub fn gallery(ui: &mut Ui) -> Option<&'static str> {
             first = false;
         }
         for cat in Category::ALL {
-            let mut names: Vec<&'static str> = CATALOG.iter().filter(|p| p.category == cat).map(|p| p.name).collect();
+            if closed_only && cat == Category::Lines {
+                continue;
+            }
+            let mut names: Vec<&'static str> = CATALOG.iter().filter(|p| p.category == cat && keep(p.name)).map(|p| p.name).collect();
             if cat == Category::Lines {
                 names.extend(deckcraft_engine::tools::FREEFORM_TOOLS.iter().map(|(n, _)| *n));
             }
@@ -121,7 +135,9 @@ pub fn gallery(ui: &mut Ui) -> Option<&'static str> {
         }
     });
     if let Some(n) = out {
-        used(ui.ctx(), n);
+        if !closed_only {
+            used(ui.ctx(), n);
+        }
         ui.close();
     }
     out

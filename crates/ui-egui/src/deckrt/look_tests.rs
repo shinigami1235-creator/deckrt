@@ -178,3 +178,18 @@ fn a_click_on_the_open_tab_keeps_the_ribbon_and_a_double_click_hides_it() {
     press(&mut h, p, 40);
     assert!(!h.state().ui.ribbon_collapsed, "a double-click brings it back");
 }
+
+#[test]
+fn change_shape_offers_only_closed_shapes() {
+    let mut h = harness("Shape Format", |s| {
+        let _ = s.execute("slide.new", &json!({"layout": "blank"}));
+        let _ = s.execute("shape.insert", &json!({"preset": "rect"}));
+    });
+    h.state_mut().ui.tab = "Shape Format".into();
+    h.run_steps(3);
+    click(&mut h, "Edit Shape");
+    assert!(has(&h, "Oval"));
+    for gone in ["Line", "Curve", "Freeform: Scribble", "Text Box"] {
+        assert!(!h.query_all_by_label(gone).any(|n| n.rect().min.y > 150.0), "{gone} offered");
+    }
+}

@@ -2425,7 +2425,8 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
         let r = big_button(ui, Icon::EditShape, "Edit\nShape", sel);
         egui::Popup::menu(&r).show(|ui| {
             ui.label("Change Shape");
-            if let Some(p) = shapes_gallery(ui) {
+            // deckrt hook: no lines, text box or freehand tools, which can't be a shape's outline.
+            if let Some(p) = crate::deckrt::shapes::change_gallery(ui) {
                 run(app, "shape.change", json!({"preset": p}));
             }
             ui.separator();
@@ -2754,7 +2755,8 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
         let r = big_button(ui, Icon::Crop, "Crop", true);
         egui::Popup::menu(&r).show(|ui| {
             ui.label("Crop to Shape");
-            if let Some(p) = shapes_gallery(ui) {
+            // deckrt hook: no lines, text box or freehand tools, which can't be a shape's outline.
+            if let Some(p) = crate::deckrt::shapes::change_gallery(ui) {
                 run(app, "shape.change", json!({"preset": p}));
             }
             ui.separator();
