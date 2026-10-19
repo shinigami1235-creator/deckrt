@@ -14,6 +14,7 @@ pub mod notes;
 pub mod prefs;
 pub mod preview;
 pub mod screenshot;
+pub mod shapes;
 pub mod record;
 pub mod video;
 pub mod check;
@@ -59,7 +60,7 @@ use serde_json::{Value, json};
 
 use crate::SlideApp;
 use crate::icons::Icon;
-use crate::widgets::{group, rows};
+use crate::widgets::rows;
 
 /// The pane id of the object settings.
 pub const PANE: &str = "interactive";
@@ -181,7 +182,7 @@ pub fn end_frame(app: &mut SlideApp) {
 /// The Insert tab's Interactive group.
 pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
-    group(ui, |ui| {
+    crate::widgets::group_named(ui, "Interactive", |ui| {
         if crate::widgets::big_button(ui, icon(Kind::Model), "3D\nModel", en).on_hover_text("3D model from a .glb, .obj or .stl file").clicked() {
             insert(app, Kind::Model);
         }
@@ -444,3 +445,5 @@ pub fn context_items(app: &mut SlideApp, ui: &mut Ui) {
 
 #[cfg(test)]
 mod audit_tests;
+#[cfg(test)]
+mod look_tests;

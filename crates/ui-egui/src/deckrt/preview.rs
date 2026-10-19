@@ -399,3 +399,84 @@ pub fn effect_gallery(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
         ui.close();
     }
 }
+
+/// Timing › Reorder Animation: the selected object's first effect, one place earlier or later in
+/// the slide's order, as in PowerPoint.
+pub fn reorder_animation(app: &mut SlideApp, ui: &mut egui::Ui) {
+    let (index, count) = app
+        .session
+        .active()
+        .and_then(|d| {
+            let s = d.current_slide()?;
+            let id = d.selection.shapes.first()?;
+            Some((s.animations.iter().position(|a| a.shape == *id), s.animations.len()))
+        })
+        .unwrap_or((None, 0));
+    crate::widgets::rows(ui, |ui| {
+        ui.add(egui::Label::new("Reorder Animation").wrap_mode(egui::TextWrapMode::Extend));
+        for (label, up) in [("Move Earlier", true), ("Move Later", false)] {
+            let target = index.and_then(|i| if up { i.checked_sub(1) } else { (i + 1 < count).then_some(i + 1) });
+            let icon = if up { crate::icons::Icon::BringForward } else { crate::icons::Icon::SendBackward };
+            if crate::widgets::small_button(ui, icon, label, target.is_some(), false).clicked()
+                && let (Some(i), Some(to)) = (index, target)
+            {
+                let _ = app.run("animation.move", serde_json::json!({"index": i, "to": to}));
+            }
+        }
+    });
+}
+
+/// Animation Pane: the up and down arrows at the top right that move the selected effect.
+pub fn pane_reorder(app: &mut SlideApp, ui: &mut egui::Ui, at: Option<usize>, count: usize) {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.add_space(16.0); // clear of the scroll bar along the right edge
+        let down = at.filter(|i| i + 1 < count);
+        let up = at.filter(|i| *i > 0);
+        if crate::widgets::icon_toggle(ui, crate::icons::Icon::SendBackward, "Move Later", down.is_some(), false).clicked()
+            && let Some(i) = down
+        {
+            let _ = app.run("animation.move", serde_json::json!({"index": i, "to": i + 1}));
+        }
+        if crate::widgets::icon_toggle(ui, crate::icons::Icon::BringForward, "Move Earlier", up.is_some(), false).clicked()
+            && let Some(i) = up
+        {
+            let _ = app.run("animation.move", serde_json::json!({"index": i, "to": i - 1}));
+        }
+    });
+}
+
+/// Animation Pane: a row's name with the start of the object's text after it.
+pub fn pane_row_name(app: &SlideApp, shape: ShapeId, name: String) -> String {
+    let text = app
+        .session
+        .active()
+        .and_then(|d| d.shapes().iter().find(|s| s.id == shape).and_then(|s| s.text.as_ref().map(|t| t.paragraphs.iter().map(|p| p.text()).find(|l| !l.trim().is_empty()))))
+        .flatten()
+        .unwrap_or_default();
+    let text = text.trim();
+    if text.is_empty() {
+        return name;
+    }
+    let short: String = text.chars().take(24).collect();
+    format!("{name}: {short}{}", if text.chars().count() > 24 { "…" } else { "" })
+}
+
+/// Room kept at the right end of an Animation Pane row for its arrow.
+pub const ROW_ARROW_W: f32 = 44.0;
+
+/// Animation Pane: the selected row's drop-down arrow at its right end, for the row's menu.
+pub fn pane_row_arrow(ui: &mut egui::Ui, index: usize, r: Rect, selected: bool) -> Option<egui::Response> {
+    if !selected {
+        return None;
+    }
+    let t = crate::theme::Tokens::get(ui.ctx());
+    // Clear of the scroll bar, which takes the pointer along the pane's right edge.
+    let a = Rect::from_center_size(pos2(r.max.x - ROW_ARROW_W + 10.0, r.center().y), vec2(16.0, 20.0));
+    let resp = ui.interact(a, egui::Id::new(("deckrt-anim-row-arrow", index)), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Effect menu"));
+    if resp.hovered() {
+        ui.painter().rect_filled(a, CornerRadius::same(2), t.hover);
+    }
+    crate::widgets::chevron(ui.painter(), a.center(), 3.0, t.text_dim);
+    Some(resp)
+}

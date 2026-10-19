@@ -137,6 +137,14 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/lib.rs` (round 8) | `deckrt::screenshot::frame` each frame for Screen Clipping's window |
 | `crates/ui-egui/src/backstage.rs` (round 8) | the sample deck's tile on File › New |
 | `crates/ui-egui/src/ribbon.rs`, `menus.rs` (round 8) | Present in Presenter View after Presenter View on the Slide Show tab, and Alt+F5 for it (`deckrt::show::present_in_presenter_view`) |
+| `crates/engine/src/cmd/mod.rs`, `insert.rs` (round 9) | `pub mod deckrt_wordart;`; `insert.wordArt` styles its text with PowerPoint's twenty styles (`deckrt_wordart::apply`) |
+| `crates/engine/src/soak_tests.rs` (round 9) | the soak test skips `deckrt.openSample`, which opens a second document as `file.new` does |
+| `crates/ui-egui/src/widgets.rs` (round 9) | `group_named` and `group_launcher`: every ribbon group has its name under it and the lines between groups are drawn once all are placed (a name starting with `+` carries on the group before); `framed_gallery` is PowerPoint's in-ribbon gallery with the up, down and More arrows; `chevron_up` |
+| `crates/ui-egui/src/ribbon.rs` (round 9) | PowerPoint's group names on every tab; Font, Paragraph, Drawing and Shape Styles have corner arrows (the Font… and Paragraph… buttons are gone); Home's Drawing group shows the shapes inline (`deckrt::shapes::inline`) and its Picture group is gone; Editing is Find, Replace (Replace Fonts under its arrow) and Select (Selection Pane under it); the themes, variants, transitions and animations are framed galleries; Timing has Reorder Animation; Insert › Chart and Change Chart Type open the Insert Chart dialog; `shapes_gallery` is `deckrt::shapes::gallery`; a click on the open tab never hides the ribbon (a double-click does); tabs carry their names for screen readers |
+| `crates/ui-egui/src/dialogs.rs` (round 9) | `smartart`, `chart` and `chartType` are `deckrt::insert_previews::smartart_dialog` and `chart_dialog` |
+| `crates/ui-egui/src/panes.rs` (round 9) | Animation Pane: reorder arrows at the top, `Title 1: text` names, the selected row's arrow opens its menu (`anim_row_menu`), the timeline keeps room for the arrow, the seconds ruler sits at the foot |
+| `crates/ui-egui/src/show.rs` (round 9) | show keys leave a focused text box alone (`deckrt::show::typing`); Esc only leaves the box |
+| `crates/ui-egui/src/browsetheme_tests.rs`, `font_dialog_tests.rs`, `paragraph_dialog_tests.rs`, `replacefonts_tests.rs` (round 9) | reach Browse for Themes, Font, Paragraph and Replace Fonts the new way |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
 
@@ -284,6 +292,19 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   can ship to anyone. Gid's own sample deck (with figures from his lectures) stays out of the
   repository.
 
+- Round 9 follows PowerPoint's current ribbon from Gid's screenshots: group names, corner
+  arrows, the inline shapes in Drawing, framed galleries, and the SmartArt and Insert Chart
+  dialogs' three-part layout. deckrt keeps its white ribbon card rather than PowerPoint's grey
+  band. Home loses upstream's Picture group (Insert › Pictures has it) since PowerPoint's Home
+  has none.
+- WordArt's twenty styles set the text's fill, outline, shadow and glow from theme colours.
+  deckrt's text has no bevel or pattern fill, so bevels are drawn as shading and the last row's
+  patterns as hard-stop gradient stripes; PowerPoint opens them as gradients.
+- A gallery's More arrow, a pane row's arrow and the pane's top-right buttons stay clear of the
+  pane's floating scroll bar, which takes the pointer along the right edge.
+- Dialog OK on Enter only when no text box has the keys: the SmartArt dialog's Enter used to
+  insert the graphic while typing its items.
+
 ## PowerPoint feel: next run
 
 Gaps that would keep the app from feeling like PowerPoint, ranked, with a rough size. Sizes:
@@ -321,5 +342,5 @@ small is an afternoon, medium a day or two, large a week.
 12. **No Office file association from the zip.** Only the MSI registers deckrt under Open with.
     Small.
 13. **No thumbnails for a model in the Selection Pane** and no object icons there. Small.
-14. **The Interactive group has no caption**, like the other groups upstream; PowerPoint names
+14. Done (round 9). **The Interactive group has no caption**, like the other groups upstream; PowerPoint names
     its groups. Small (every group).

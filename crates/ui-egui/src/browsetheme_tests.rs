@@ -41,6 +41,9 @@ fn browse_button_applies_the_picked_files_theme() {
         app,
     );
     h.run_steps(3);
+    // deckrt: Browse for Themes is in the menu under the themes gallery, as in PowerPoint.
+    h.get_all_by_label("More").next().unwrap().click();
+    h.run_steps(3);
     h.get_by_label("Browse for Themes…").click();
     h.run_steps(3);
     assert_eq!(asked.borrow().as_slice(), ["theme"]);

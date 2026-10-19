@@ -73,7 +73,7 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("insert.audio", "Audio from File…", ["Insert", "Media", "Audio"], None, "{path? | data: base64, name?, rect?}", has_slide, audio),
         cmd!("insert.video", "Video from File…", ["Insert", "Media", "Video"], None, "{path? | data: base64, name?, rect?}", has_slide, video),
-        cmd!("insert.wordArt", "WordArt", ["Insert", "Text"], None, "{text?, style?: 0..}", has_slide, word_art),
+        cmd!("insert.wordArt", "WordArt", ["Insert", "Text"], None, "{text?, style?: 0..19}", has_slide, word_art),
         cmd!("insert.slideNumber", "Slide Number", ["Insert", "Text"], None, "{}", has_slide, slide_number),
         cmd!(
             "insert.dateTime",
@@ -1339,16 +1339,8 @@ fn word_art(s: &mut Session, p: &Value) -> Result<Value> {
             para.props.align = Some(deckcraft_model::text::Align::Center);
             for r in &mut para.runs {
                 r.props.size = Some(54.0);
-                r.props.bold = Some(style % 2 == 1);
-                r.props.fill = Some(Fill::solid(ColorRef::scheme(match style % 4 {
-                    0 => SchemeSlot::Tx1,
-                    1 => SchemeSlot::Accent1,
-                    2 => SchemeSlot::Accent2,
-                    _ => SchemeSlot::Accent4,
-                })));
-                if style % 3 == 2 {
-                    r.props.outline = Some(deckcraft_model::Line::solid(ColorRef::scheme(SchemeSlot::Bg1), 1.0));
-                }
+                // deckrt hook: PowerPoint's twenty WordArt styles.
+                super::deckrt_wordart::apply(style.min(super::deckrt_wordart::NAMES.len() - 1), &mut r.props);
             }
         }
     }

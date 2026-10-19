@@ -84,7 +84,7 @@ fn lock(m: &Mutex<Progress>) -> std::sync::MutexGuard<'_, Progress> {
 /// The Export to Video button on the Record tab.
 pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
-    crate::widgets::group(ui, |ui| {
+    crate::widgets::group_named(ui, "Export", |ui| {
         if crate::widgets::big_button(ui, crate::icons::Icon::Video, "Export\nto Video", en)
             .on_hover_text("Save the deck as an MP4 with your recorded timings and narration")
             .clicked()

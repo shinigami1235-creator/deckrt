@@ -17,6 +17,21 @@ in the test build so far.
 - **Pictures in the Insert menus** for Chart, WordArt, Action and SmartArt.
 - **Insert › Screenshot**: pictures of your open windows, and Screen Clipping.
 - **The sample deck** is in File › New: one slide for each feature, with notes to read aloud.
+- **The ribbon looks like PowerPoint's.** Every group has its name under it, Font, Paragraph and
+  Drawing have the small corner arrow for their dialog or pane, Drawing shows the shapes in the
+  ribbon, and the theme, transition and animation galleries scroll by row with an arrow for the
+  full list. Animations › Timing has Move Earlier and Move Later.
+- **The Shapes menu** starts with the shapes used last.
+- **WordArt** has PowerPoint's twenty styles, shown as a big A each.
+- **Choose a SmartArt Graphic** and **Insert Chart** are laid out as PowerPoint's: the kinds on
+  the left, pictures in the middle, the chosen one large with what it's for. Change Chart Type
+  uses the same dialog.
+- **The Animation Pane** has the reorder arrows at the top, shows each object's text after its
+  name, and the selected effect's arrow opens its menu.
+- **Fixes from the audit:** typing in a box during the show no longer moves the slides, a click
+  on the open tab no longer hides the ribbon, Enter in the SmartArt items no longer inserts the
+  graphic, a failed video export leaves no broken file, and the pane's text and number boxes
+  make one undo step each.
 - **Present in Presenter View** (Slide Show tab, or Alt+F5) opens presenter view on one screen,
   so you can see it and practise without a projector.
 

@@ -66,6 +66,8 @@ fn title(id: &str) -> &'static str {
         "chartData" => "Chart Data",
         "trim" => "Trim Media",
         "smartart" => "Choose a SmartArt Graphic",
+        "chart" => "Insert Chart", // deckrt hook
+        "chartType" => "Change Chart Type", // deckrt hook
         "bullets" => "Bullets and Numbering",
         "action" => "Action Settings",
         "quit" => "deckrt",
@@ -2039,23 +2041,9 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             }
             ok || cancel
         }
-        "smartart" => {
-            ui.label("Pick a graphic; type one item per line.");
-            let kind = d.get("kind", "process");
-            // deckrt hook: every layout as a picture, by category.
-            if let Some(k) = crate::deckrt::insert_previews::smartart_picker(app, ui, &kind) {
-                d.fields.insert("kind".into(), k.into());
-            }
-            let mut v = d.get("text", "Plan\nBuild\nLaunch");
-            ui.add(egui::TextEdit::multiline(&mut v).desired_rows(5).desired_width(320.0));
-            d.fields.insert("text".into(), v.clone());
-            let (ok, cancel) = buttons(ui, "Insert");
-            if ok {
-                run(app, "insert.smartArt", json!({"kind": kind, "items": v.lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>()}));
-                app.ui.pane = Some("smartart".into());
-            }
-            ok || cancel
-        }
+        // deckrt hook: PowerPoint's layout: categories, pictures, and the chosen one large.
+        "smartart" => crate::deckrt::insert_previews::smartart_dialog(app, ui, d),
+        "chart" | "chartType" => crate::deckrt::insert_previews::chart_dialog(app, ui, d),
         "about" => {
             let tab = d.get("tab", "about");
             ui.horizontal(|ui| {

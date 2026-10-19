@@ -43,6 +43,9 @@ fn run_font(h: &Harness<'_, SlideApp>) -> Option<String> {
 #[test]
 fn ribbon_button_opens_the_dialog_and_replaces() {
     let mut h = harness();
+    // deckrt: Replace Fonts is under Replace's arrow, as in PowerPoint.
+    h.get_by_label("Replace options").click();
+    h.run_steps(3);
     h.get_by_label("Replace Fonts…").click();
     h.run_steps(3);
     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("replaceFonts"));

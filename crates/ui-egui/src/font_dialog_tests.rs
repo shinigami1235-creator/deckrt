@@ -37,7 +37,7 @@ fn bold_of(h: &Harness<'_, SlideApp>) -> Option<bool> {
 #[test]
 fn font_button_applies_bold_from_the_dialog() {
     let mut h = harness();
-    h.get_by_label("Font…").click();
+    h.get_by_label("Font options").click(); // deckrt: the Font group's corner arrow
     // The opening frame ignores the click that summoned the window; the next one is live.
     h.run_steps(2);
     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("font"));

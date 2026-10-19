@@ -103,6 +103,12 @@ fn wrap_label(label: &str) -> Vec<&str> {
     vec![label]
 }
 
+/// deckrt: an upward chevron (gallery scroll arrows).
+pub fn chevron_up(p: &egui::Painter, c: egui::Pos2, s: f32, col: Color32) {
+    p.line_segment([pos2(c.x - s, c.y + s * 0.5), pos2(c.x, c.y - s * 0.5)], Stroke::new(1.2, col));
+    p.line_segment([pos2(c.x, c.y - s * 0.5), pos2(c.x + s, c.y + s * 0.5)], Stroke::new(1.2, col));
+}
+
 pub fn chevron(p: &egui::Painter, c: egui::Pos2, s: f32, col: Color32) {
     p.line_segment([pos2(c.x - s, c.y - s * 0.5), pos2(c.x, c.y + s * 0.5)], Stroke::new(1.2, col));
     p.line_segment([pos2(c.x, c.y + s * 0.5), pos2(c.x + s, c.y - s * 0.5)], Stroke::new(1.2, col));
@@ -197,26 +203,75 @@ pub fn color_split(ui: &mut Ui, icon: Icon, tip: &str, color: Color32, enabled: 
 /// being drawn (`fit_begin` to `fit_end`), a group that would run past the window's edge moves
 /// into the More menu at the right end, rightmost groups first.
 pub fn group<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    group_ex(ui, "", false, add).0
+}
+
+/// deckrt: a group with its name under it, as PowerPoint's ribbon has. A name starting with `+`
+/// carries on the group before it (one name over both, no line between them).
+pub fn group_named<R>(ui: &mut Ui, name: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    group_ex(ui, name, false, add).0
+}
+
+/// deckrt: a named group with the small arrow in its corner that opens the group's dialog or pane.
+/// Returns whether the arrow was clicked.
+pub fn group_launcher<R>(ui: &mut Ui, name: &str, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
+    group_ex(ui, name, true, add)
+}
+
+/// Height of the row of group names under the ribbon's buttons.
+pub const GROUP_LABEL_H: f32 = 19.0;
+
+/// One group's place in the ribbon, for drawing the names and lines once every group is placed.
+#[derive(Clone)]
+struct Span {
+    x0: f32,
+    x1: f32,
+    sep: f32,
+    name: String,
+    join: bool,
+}
+
+fn group_ex<R>(ui: &mut Ui, name: &str, launcher: bool, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
     let ctx = ui.ctx().clone();
+    let join = name.starts_with('+');
+    let shown_name = name.trim_start_matches('+').to_string();
     let Some(mut fit) = ctx.data(|d| d.get_temp::<Fit>(egui::Id::new(FIT_ID))) else {
         let r = ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
             add(ui)
         });
         separator(ui);
-        return r.inner;
+        return (r.inner, false);
     };
     let n = fit.next;
     fit.next += 1;
     let wkey = egui::Id::new(("ribbon-group-width", fit.tab, n));
     let hidden = fit.hide_from.is_some_and(|k| n >= k);
+    let label_font = theme::font(11.0);
+    let label_w = if shown_name.is_empty() || join {
+        0.0
+    } else {
+        ui.fonts_mut(|f| f.layout_no_wrap(shown_name.clone(), label_font.clone(), Color32::WHITE).size().x) + if launcher { 30.0 } else { 12.0 }
+    };
+    let mut launched = false;
     let r = if !hidden {
         let x0 = ui.cursor().min.x;
+        let top = ui.max_rect().min.y;
         let r = ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
             add(ui)
         });
-        separator(ui);
+        let content = ui.cursor().min.x - x0;
+        if content < label_w {
+            ui.add_space(label_w - content);
+        }
+        let x1 = ui.cursor().min.x;
+        if launcher {
+            launched = launcher_button(ui, pos2(x1 - 9.0, top + RIBBON_H + GROUP_LABEL_H / 2.0 + 1.0), &shown_name);
+        }
+        let (gap, _) = ui.allocate_exact_size(vec2(13.0, RIBBON_H - 6.0), Sense::hover());
+        fit.spans.push(Span { x0, x1, sep: gap.center().x, name: shown_name.clone(), join });
+        fit.label_y = top + RIBBON_H;
         let w = ui.cursor().min.x - x0;
         ctx.data_mut(|d| d.insert_temp(wkey, w));
         r.inner
@@ -232,6 +287,14 @@ pub fn group<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
                     ui.spacing_mut().item_spacing = vec2(1.0, 1.0);
                     add(ui)
                 });
+                if !shown_name.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&shown_name).font(label_font.clone()).color(t.text_dim));
+                        if launcher && launcher_button(ui, ui.cursor().min + vec2(10.0, 8.0), &shown_name) {
+                            launched = true;
+                        }
+                    });
+                }
                 r.inner
             })
         });
@@ -247,7 +310,48 @@ pub fn group<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         ghost.horizontal_top(add).inner
     };
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(FIT_ID), fit));
-    r
+    (r, launched)
+}
+
+/// The small arrow in a group's corner (Font, Paragraph, Drawing…), centred on `c`.
+fn launcher_button(ui: &mut Ui, c: egui::Pos2, name: &str) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let rect = Rect::from_center_size(c, vec2(15.0, 15.0));
+    let resp = ui.interact(rect, ui.id().with(("group-launcher", name)), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{name} options")));
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(rect, CornerRadius::same(2), t.hover);
+    }
+    let r = rect.shrink(4.0);
+    let s = Stroke::new(1.0, t.text_dim);
+    // A corner bracket with an arrow pointing into it, PowerPoint's dialog launcher.
+    p.line_segment([r.left_top(), pos2(r.left(), r.bottom() - 1.0)], s);
+    p.line_segment([r.left_top(), pos2(r.right() - 1.0, r.top())], s);
+    p.line_segment([pos2(r.left() + 2.0, r.top() + 2.0), r.right_bottom()], s);
+    p.line_segment([r.right_bottom(), pos2(r.right() - 3.5, r.bottom())], s);
+    p.line_segment([r.right_bottom(), pos2(r.right(), r.bottom() - 3.5)], s);
+    resp.on_hover_text(format!("{name} options")).clicked()
+}
+
+/// Draw the group names and the lines between groups, once all of them are placed.
+fn paint_spans(ui: &Ui, spans: &[Span], label_y: f32, top: f32) {
+    let t = Tokens::get(ui.ctx());
+    let p = ui.painter();
+    let mut i = 0;
+    while i < spans.len() {
+        let mut j = i;
+        while j + 1 < spans.len() && spans[j + 1].join {
+            j += 1;
+        }
+        let (x0, x1) = (spans[i].x0, spans[j].x1);
+        if !spans[i].name.is_empty() {
+            p.text(pos2((x0 + x1) / 2.0, label_y + GROUP_LABEL_H / 2.0 + 1.0), Align2::CENTER_CENTER, &spans[i].name, theme::font(11.0), t.text_dim);
+        }
+        let sx = spans[j].sep;
+        p.line_segment([pos2(sx, top + 4.0), pos2(sx, label_y + GROUP_LABEL_H - 3.0)], Stroke::new(1.0, t.separator));
+        i = j + 1;
+    }
 }
 
 const FIT_ID: &str = "deckrt-ribbon-fit";
@@ -263,6 +367,8 @@ struct Fit {
     right: f32,
     y: f32,
     menu_rects: Vec<Rect>,
+    spans: Vec<Span>,
+    label_y: f32,
 }
 
 fn tab_key(tab: &str) -> u64 {
@@ -294,7 +400,17 @@ pub fn fit_begin(ui: &Ui, tab: &str, inner: Rect) {
         None
     };
     let open = hide_from.is_some() && ctx.data(|d| d.get_temp::<bool>(egui::Id::new(("ribbon-more-open", key)))).unwrap_or(false);
-    let fit = Fit { tab: key, next: 0, hide_from, open, right: inner.max.x, y: inner.max.y + 12.0, menu_rects: vec![] };
+    let fit = Fit {
+        tab: key,
+        next: 0,
+        hide_from,
+        open,
+        right: inner.max.x,
+        y: inner.max.y + GROUP_LABEL_H + 12.0,
+        menu_rects: vec![],
+        spans: vec![],
+        label_y: inner.max.y,
+    };
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(FIT_ID), fit));
 }
 
@@ -304,6 +420,7 @@ pub fn fit_end(ui: &mut Ui, tab: &str, inner: Rect) {
     let key = tab_key(tab);
     let Some(fit) = ctx.data_mut(|d| d.remove_temp::<Fit>(egui::Id::new(FIT_ID))) else { return };
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(("ribbon-group-count", key)), fit.next));
+    paint_spans(ui, &fit.spans, fit.label_y, inner.min.y);
     let open_key = egui::Id::new(("ribbon-more-open", key));
     if fit.hide_from.is_none() {
         ctx.data_mut(|d| d.remove_temp::<bool>(open_key));
@@ -529,6 +646,99 @@ pub fn gallery(
         }
     }
     clicked
+}
+
+/// deckrt: PowerPoint's in-ribbon gallery. One row of `cols` tiles in a framed box, with the
+/// arrows down its right side: up and down page through the rows, the bottom one is `more`
+/// (attach the full gallery to it with `egui::Popup::menu`). The row with the selected tile is
+/// shown when the selection changes.
+#[allow(clippy::too_many_arguments)]
+pub fn framed_gallery(
+    ui: &mut Ui,
+    id_salt: &str,
+    n: usize,
+    tile: Vec2,
+    cols: usize,
+    selected: Option<usize>,
+    enabled: bool,
+    paint_tile: impl FnMut(&egui::Painter, Rect, usize),
+    tip: impl FnMut(usize) -> String,
+) -> (Option<usize>, Response) {
+    let t = Tokens::get(ui.ctx());
+    let cols = cols.max(1);
+    let rows = n.div_ceil(cols).max(1);
+    let key = ui.id().with(("framed-gallery", id_salt));
+    let (mut row, last_sel): (usize, Option<usize>) = ui.data(|d| d.get_temp(key)).unwrap_or((0, None));
+    if selected != last_sel
+        && let Some(s) = selected
+    {
+        row = s / cols;
+    }
+    row = row.min(rows - 1);
+    let box_size = vec2(cols as f32 * tile.x + 4.0 + 16.0, tile.y + 6.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(box_size.x, RIBBON_H - 2.0), Sense::hover());
+    let frame = Rect::from_min_size(rect.min + vec2(0.0, 1.0), box_size);
+    ui.painter().rect(frame, CornerRadius::same(2), t.card, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    let tiles = Rect::from_min_size(frame.min + vec2(2.0, 3.0), vec2(cols as f32 * tile.x, tile.y));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tiles).layout(egui::Layout::left_to_right(egui::Align::Min)));
+    child.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    if !enabled {
+        child.disable();
+    }
+    let first = row * cols;
+    let count = n.saturating_sub(first).min(cols);
+    let mut paint_tile = paint_tile;
+    let mut tip = tip;
+    let picked = gallery(
+        &mut child,
+        count,
+        tile,
+        selected.and_then(|s| s.checked_sub(first)).filter(|s| *s < count),
+        |p, r, i| paint_tile(p, r, first + i),
+        |i| tip(first + i),
+    )
+    .map(|i| first + i);
+    // The arrows.
+    let col = Rect::from_min_max(pos2(tiles.max.x + 1.0, frame.min.y), frame.max);
+    ui.painter().line_segment([col.left_top(), col.left_bottom()], Stroke::new(1.0, t.border));
+    let h = col.height() / 3.0;
+    let mut more = None;
+    for k in 0..3 {
+        let r = Rect::from_min_size(pos2(col.min.x, col.min.y + k as f32 * h), vec2(col.width(), h));
+        let (label, on) = match k {
+            0 => ("Row up", row > 0),
+            1 => ("Row down", row + 1 < rows),
+            _ => ("More", enabled),
+        };
+        let resp = ui.interact(r, key.with(k), if on { Sense::click() } else { Sense::hover() });
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, on, label));
+        if resp.hovered() && on {
+            ui.painter().rect_filled(r.shrink(1.0), CornerRadius::ZERO, t.hover);
+        }
+        let c = r.center();
+        let colr = if on { t.text_dim } else { t.text_faint };
+        match k {
+            0 => chevron_up(ui.painter(), c, 3.0, colr),
+            1 => chevron(ui.painter(), c, 3.0, colr),
+            _ => {
+                ui.painter().line_segment([pos2(c.x - 3.0, c.y - 3.5), pos2(c.x + 3.0, c.y - 3.5)], Stroke::new(1.2, colr));
+                chevron(ui.painter(), c + vec2(0.0, 1.5), 3.0, colr);
+            }
+        }
+        if resp.clicked() {
+            match k {
+                0 => row = row.saturating_sub(1),
+                1 => row += 1,
+                _ => {}
+            }
+        }
+        if k == 2 {
+            more = Some(resp);
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(key, (row, selected)));
+    #[allow(clippy::expect_used)]
+    (picked, more.expect("three arrows"))
 }
 
 /// A labelled number field with up/down steppers. Returns the new value when committed.

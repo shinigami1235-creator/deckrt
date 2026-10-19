@@ -71,7 +71,7 @@ fn clear_menu(app: &mut SlideApp, ui: &mut Ui) {
 /// The Record tab. Takes the place of upstream's group.
 pub fn ribbon(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
-    crate::widgets::group(ui, |ui| {
+    crate::widgets::group_named(ui, "Record", |ui| {
         if crate::widgets::big_button(ui, crate::icons::Icon::PlayFromStart, "Record from\nBeginning", en)
             .on_hover_text("Present from the first slide with the microphone on. Each slide keeps what you say while it's up.")
             .clicked()
@@ -88,7 +88,7 @@ pub fn ribbon(app: &mut SlideApp, ui: &mut Ui) {
         let (r, _) = crate::widgets::big_button_ex(ui, crate::icons::Icon::Eraser, "Clear", en, false, false);
         egui::Popup::menu(&r).width(300.0).show(|ui| clear_menu(app, ui));
     });
-    crate::widgets::group(ui, |ui| {
+    crate::widgets::group_named(ui, "Settings", |ui| {
         crate::widgets::rows(ui, |ui| {
             let mut narr = app.session.active().is_none_or(|d| !d.doc.show.without_narration);
             if ui.checkbox(&mut narr, "Play Narrations").changed() {

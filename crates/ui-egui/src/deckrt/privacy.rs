@@ -18,7 +18,7 @@ pub struct BlurTool {
 
 /// The two buttons on the Review tab.
 pub fn ribbon_group(app: &mut SlideApp, ui: &mut Ui) {
-    crate::widgets::group(ui, |ui| {
+    crate::widgets::group_named(ui, "Sharing", |ui| {
         let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
         if crate::widgets::big_button(ui, crate::icons::Icon::Lock, "Check Before\nSharing", en)
             .on_hover_text("Find cropped-away parts, photo details, hidden text and notes that go with the file")

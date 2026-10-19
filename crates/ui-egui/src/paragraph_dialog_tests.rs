@@ -49,7 +49,7 @@ fn tabs_of(h: &Harness<'_, SlideApp>) -> Vec<(f64, String)> {
 #[test]
 fn paragraph_button_aligns_text_in_one_undo() {
     let mut h = harness();
-    h.get_by_label("Paragraph…").click();
+    h.get_by_label("Paragraph options").click(); // deckrt: the group's corner arrow
     h.run_steps(2);
     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("paragraph"));
     h.state_mut().dialog.as_mut().unwrap().fields.insert("align".into(), "right".into());
@@ -63,7 +63,7 @@ fn paragraph_button_aligns_text_in_one_undo() {
 #[test]
 fn tabs_from_paragraph_applies_a_stop_and_returns() {
     let mut h = harness();
-    h.get_by_label("Paragraph…").click();
+    h.get_by_label("Paragraph options").click(); // deckrt: the group's corner arrow
     h.run_steps(2);
     h.state_mut().dialog.as_mut().unwrap().fields.insert("align".into(), "right".into());
     h.get_by_label("Tabs…").click_accesskit();

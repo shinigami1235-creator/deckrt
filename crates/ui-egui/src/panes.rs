@@ -1001,6 +1001,9 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
         if ui.button(if playing { "■ Stop" } else { "▶ Play All" }).clicked() {
             run(app, "animation.preview", json!({"on": !playing}));
         }
+        // deckrt hook: PowerPoint's reorder arrows at the top right.
+        let at = anims.iter().position(|a| selected.contains(&a.shape.0));
+        crate::deckrt::preview::pane_reorder(app, ui, at, anims.len());
     });
     ui.separator();
     if anims.is_empty() {
@@ -1009,7 +1012,8 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
     }
     let bars = animtimeline::bars(anims.len(), &effects);
     let seconds = animtimeline::ruler_seconds(&bars);
-    let track_w = (ui.available_width() * 0.45).max(60.0);
+    // deckrt hook: the track gives up the room the row arrow takes.
+    let track_w = (ui.available_width() * 0.45 - crate::deckrt::preview::ROW_ARROW_W).max(60.0);
     let pps = animtimeline::pixels_per_second(track_w, seconds);
     let mut click = 0;
     for (i, a) in anims.iter().enumerate() {
@@ -1017,6 +1021,8 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
             click += 1;
         }
         let name = names.iter().find(|(id, _)| *id == a.shape.0).map(|(_, n)| n.clone()).unwrap_or_else(|| format!("Shape {}", a.shape));
+        // deckrt hook: the name and the start of its text, as PowerPoint lists it ("Title 1: Hello").
+        let name = crate::deckrt::preview::pane_row_name(app, a.shape, name);
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
         let sel = selected.contains(&a.shape.0);
         if sel || resp.hovered() {
@@ -1046,7 +1052,7 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
                 AnimClass::Exit => Color32::from_rgb(0xD8, 0x3F, 0x6B),
                 _ => Color32::from_rgb(0x2E, 0x6F, 0xD8),
             };
-            let x0 = r.max.x - track_w - 6.0;
+            let x0 = r.max.x - track_w - 6.0 - crate::deckrt::preview::ROW_ARROW_W; // deckrt hook: room for the row arrow
             let x_of = |sec: f64| x0 + (sec as f32 * pps).min(track_w);
             let mut bar = Rect::from_min_max(
                 pos2(x_of(b.start), r.center().y - 5.0),
@@ -1105,31 +1111,18 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
         if resp.clicked() {
             run(app, "edit.select", json!({"ids": [a.shape.0]}));
         }
-        resp.context_menu(|ui| {
-            for (l, v) in [("Start On Click", "onClick"), ("Start With Previous", "withPrevious"), ("Start After Previous", "afterPrevious")] {
-                if ui.button(l).clicked() {
-                    run(app, "animation.timing", json!({"index": i, "start": v}));
-                    ui.close();
-                }
-            }
-            ui.separator();
-            if ui.button("Move Up").clicked() {
-                run(app, "animation.move", json!({"index": i, "to": i.saturating_sub(1)}));
-                ui.close();
-            }
-            if ui.button("Move Down").clicked() {
-                run(app, "animation.move", json!({"index": i, "to": i + 1}));
-                ui.close();
-            }
-            if ui.button("Remove").clicked() {
-                run(app, "animation.remove", json!({"index": i}));
-                ui.close();
-            }
-        });
+        resp.context_menu(|ui| anim_row_menu(app, ui, i));
+        // deckrt hook: the selected row's arrow opens the same menu, as in PowerPoint.
+        if let Some(arrow) = crate::deckrt::preview::pane_row_arrow(ui, i, r, sel) {
+            egui::Popup::menu(&arrow).show(|ui| anim_row_menu(app, ui, i));
+        }
     }
-    // Seconds ruler under the bars.
+    // Seconds ruler under the bars. deckrt hook: at the foot of the pane, as in PowerPoint.
+    ui.add_space((ui.available_height() - 26.0).max(4.0));
+    ui.separator();
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-    let x0 = r.max.x - track_w - 6.0;
+    ui.painter().text(pos2(r.min.x + 4.0, r.min.y + 8.0), Align2::LEFT_CENTER, "Seconds", theme::font(11.5), t.text_dim);
+    let x0 = r.max.x - track_w - 6.0 - crate::deckrt::preview::ROW_ARROW_W; // deckrt hook: room for the row arrow
     let p = ui.painter();
     p.line_segment([pos2(x0, r.min.y + 2.0), pos2(x0 + track_w, r.min.y + 2.0)], Stroke::new(1.0, t.text_faint));
     let every = (seconds / 6).max(1);
@@ -1142,6 +1135,29 @@ fn animation(app: &mut SlideApp, ui: &mut Ui) {
         p.text(pos2(x, r.min.y + 6.0), Align2::CENTER_TOP, format!("{s}s"), theme::font(10.0), t.text_dim);
     }
     let _ = paint_anim_tile;
+}
+
+/// An Animation Pane row's menu (right-click, or the selected row's arrow).
+fn anim_row_menu(app: &mut SlideApp, ui: &mut Ui, i: usize) {
+    for (l, v) in [("Start On Click", "onClick"), ("Start With Previous", "withPrevious"), ("Start After Previous", "afterPrevious")] {
+        if ui.button(l).clicked() {
+            run(app, "animation.timing", json!({"index": i, "start": v}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    if ui.button("Move Up").clicked() {
+        run(app, "animation.move", json!({"index": i, "to": i.saturating_sub(1)}));
+        ui.close();
+    }
+    if ui.button("Move Down").clicked() {
+        run(app, "animation.move", json!({"index": i, "to": i + 1}));
+        ui.close();
+    }
+    if ui.button("Remove").clicked() {
+        run(app, "animation.remove", json!({"index": i}));
+        ui.close();
+    }
 }
 
 /// Review › Compare: the revised copy's slide-level changes; click to go there, Accept to take it.
