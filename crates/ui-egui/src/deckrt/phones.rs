@@ -18,7 +18,7 @@ use deckcraft_phones::{AddressInfo, Inbound, PhoneMessage, RosterEntry, hotspot,
 use egui::{Color32, Ui, vec2};
 use serde_json::{Value, json};
 
-use super::show::{Ext, InkStroke, Item, erase_ink, objects_on};
+use super::show::{Ext, InkStroke, Item, StateKey, erase_ink, objects_on};
 
 /// The port the server tries first (the old deckrt's), then the ones after it.
 pub const PORT: u16 = 8720;
@@ -289,7 +289,7 @@ impl Phones {
     #[allow(clippy::too_many_arguments)]
     pub fn logic(
         &mut self,
-        ext_states: &mut BTreeMap<u32, ObjectState>,
+        ext_states: &mut BTreeMap<StateKey, ObjectState>,
         doc: &Arc<Presentation>,
         idx: usize,
         pointer: &mut Option<[f32; 2]>,
@@ -336,7 +336,7 @@ impl Phones {
         let inbound = server.poll();
         let models: Vec<Item> = objects_on(doc, idx)
             .into_iter()
-            .filter(|it| it.obj.kind() == deckcraft_interactive::Kind::Model && ext_states.get(&it.id).is_none_or(|s| s.visible))
+            .filter(|it| it.obj.kind() == deckcraft_interactive::Kind::Model && ext_states.get(&it.key()).is_none_or(|s| s.visible))
             .collect();
         let poll_item = objects_on(doc, idx).into_iter().find(|it| it.obj.kind() == deckcraft_interactive::Kind::Poll);
         let mut tell_you: Vec<String> = vec![];
@@ -384,7 +384,7 @@ impl Phones {
                         if (option as usize) >= limit {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes, .. }, .. }) = ext_states.get_mut(&p.id) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes, .. }, .. }) = ext_states.get_mut(&p.key()) {
                             votes.insert(id.clone(), option as usize);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -409,13 +409,13 @@ impl Phones {
                             continue;
                         }
                         let want = self.targets.get(&id).cloned().unwrap_or_default();
-                        let turn: Vec<u32> = if want == "all" || (models.len() > 1 && want.is_empty() && self.together(&models)) {
-                            models.iter().map(|m| m.id).collect()
+                        let turn: Vec<StateKey> = if want == "all" || (models.len() > 1 && want.is_empty() && self.together(&models)) {
+                            models.iter().map(|m| m.key()).collect()
                         } else {
-                            models.iter().find(|m| m.id.to_string() == want).or(models.first()).map(|m| vec![m.id]).unwrap_or_default()
+                            models.iter().find(|m| m.id.to_string() == want).or(models.first()).map(|m| vec![m.key()]).unwrap_or_default()
                         };
-                        for id in turn {
-                            if let Some(ObjectState { st: TypeState::Model { turn, .. }, .. }) = ext_states.get_mut(&id) {
+                        for key in turn {
+                            if let Some(ObjectState { st: TypeState::Model { turn, .. }, .. }) = ext_states.get_mut(&key) {
                                 turn[0] += dx * 240.0;
                                 turn[1] = (turn[1] + dy * 150.0).clamp(-180.0, 180.0);
                             }
@@ -489,7 +489,7 @@ impl Phones {
                         if words.is_empty() {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, texts, .. }, .. }) = ext_states.get_mut(&p.id) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, texts, .. }, .. }) = ext_states.get_mut(&p.key()) {
                             texts.insert(id.clone(), words);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -507,7 +507,7 @@ impl Phones {
                         if order.is_empty() {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, ranks, .. }, .. }) = ext_states.get_mut(&p.id) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, ranks, .. }, .. }) = ext_states.get_mut(&p.key()) {
                             ranks.insert(id.clone(), order);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -611,7 +611,7 @@ impl Phones {
 
     fn show_message(
         &self,
-        states: &BTreeMap<u32, ObjectState>,
+        states: &BTreeMap<StateKey, ObjectState>,
         doc: &Presentation,
         idx: usize,
         models: &[Item],
@@ -620,11 +620,11 @@ impl Phones {
     ) -> Value {
         let poll_msg = poll_item.and_then(|p| {
             let Config::Poll(c) = &p.obj.config else { return None };
-            let (open, revealed) = match states.get(&p.id) {
+            let (open, revealed) = match states.get(&p.key()) {
                 Some(ObjectState { visible, st: TypeState::Poll { open, revealed, .. } }) => (*open && *visible, *revealed && c.reveal_correct),
                 _ => (false, false),
             };
-            let answered = match states.get(&p.id) {
+            let answered = match states.get(&p.key()) {
                 Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, .. }, .. }) => poll::answered(votes, texts, ranks),
                 _ => 0,
             };
@@ -683,9 +683,9 @@ impl Phones {
         })
     }
 
-    fn you_message(&self, states: &BTreeMap<u32, ObjectState>, id: &str, poll_item: Option<&Item>, models: &[Item]) -> Value {
+    fn you_message(&self, states: &BTreeMap<StateKey, ObjectState>, id: &str, poll_item: Option<&Item>, models: &[Item]) -> Value {
         let (poll_id, vote, text, rank) = match poll_item {
-            Some(p) => match states.get(&p.id) {
+            Some(p) => match states.get(&p.key()) {
                 Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, .. }, .. }) => {
                     (Some(p.id.to_string()), votes.get(id).copied(), texts.get(id).map(|t| t.join(", ")), ranks.get(id).cloned())
                 }
@@ -728,7 +728,7 @@ impl Phones {
     }
 
     /// Close the phone, refuse its id for the rest of the show, drop its votes.
-    pub fn eject(&mut self, id: &str, states: &mut BTreeMap<u32, ObjectState>, pointer: &mut Option<[f32; 2]>) {
+    pub fn eject(&mut self, id: &str, states: &mut BTreeMap<StateKey, ObjectState>, pointer: &mut Option<[f32; 2]>) {
         self.queue.withdraw(id);
         for s in states.values_mut() {
             if let TypeState::Poll { votes, .. } = &mut s.st {
@@ -779,12 +779,12 @@ impl Phones {
         }
     }
 
-    fn results(&self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation) -> results::ShowResults {
+    fn results(&self, states: &BTreeMap<StateKey, ObjectState>, doc: &Presentation) -> results::ShowResults {
         let mut polls = vec![];
         for (i, _) in doc.slides.iter().enumerate() {
             for it in objects_on(doc, i) {
                 let Config::Poll(c) = &it.obj.config else { continue };
-                let (votes, texts, ranks, hidden, revealed) = match states.get(&it.id) {
+                let (votes, texts, ranks, hidden, revealed) = match states.get(&it.key()) {
                     Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, hidden, revealed, .. }, .. }) => {
                         (votes.clone(), texts.clone(), ranks.clone(), hidden.clone(), *revealed)
                     }
@@ -832,7 +832,7 @@ impl Phones {
     }
 
     /// `<deck>.results.json` next to the deck, when the deck has a poll and a file.
-    pub fn write_results(&mut self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation) {
+    pub fn write_results(&mut self, states: &BTreeMap<StateKey, ObjectState>, doc: &Presentation) {
         let Some(deck) = &self.deck_path else { return };
         let r = self.results(states, doc);
         if r.polls.is_empty() && r.questions.is_empty() && r.feedback.is_none() && r.reactions.is_empty() {
@@ -861,7 +861,7 @@ impl Phones {
                         | deckcraft_interactive::Kind::ImageSwap
                         | deckcraft_interactive::Kind::Scrub
                         | deckcraft_interactive::Kind::Wipe
-                ) && ext.states.get(&it.id).is_none_or(|s| s.visible)
+                ) && ext.states.get(&it.key()).is_none_or(|s| s.visible)
             })
             .collect();
         if drawn.is_empty() && ext.ink.is_empty() {
@@ -875,7 +875,7 @@ impl Phones {
         let key = format!(
             "{idx}|{}|{ink_points}|{:?}",
             ext.ink.len(),
-            drawn.iter().map(|it| ext.states.get(&it.id).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>()
+            drawn.iter().map(|it| ext.states.get(&it.key()).map(|s| format!("{:?}", s.st))).collect::<Vec<_>>()
         );
         if key == self.live_key && self.live_current.is_some_and(|(s, _)| s == idx) {
             return;
@@ -883,7 +883,7 @@ impl Phones {
         // Everything the thread needs, gathered now.
         let mut layers: Vec<Layer> = vec![];
         for it in drawn {
-            let Some(os) = ext.states.get(&it.id) else { continue };
+            let Some(os) = ext.states.get(&it.key()) else { continue };
             let r = [
                 it.xfrm.x / doc.slide_size.width.max(1.0),
                 it.xfrm.y / doc.slide_size.height.max(1.0),
@@ -943,7 +943,7 @@ impl Phones {
     }
 
     /// Stop the server: the phones are told, the results are written.
-    pub fn stop(mut self, states: &BTreeMap<u32, ObjectState>, doc: &Presentation) {
+    pub fn stop(mut self, states: &BTreeMap<StateKey, ObjectState>, doc: &Presentation) {
         if let Some(s) = &self.server {
             s.broadcast(&json!({"t": "ended"}));
         }

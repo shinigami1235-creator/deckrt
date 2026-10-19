@@ -202,7 +202,7 @@ pub fn zoom_progress(since: f64, now: f64, duration_ms: u32) -> f64 {
 }
 
 /// After leaving a slide: every injection map that is not pinned drops its points.
-pub fn clear_unpinned(states: &mut BTreeMap<u32, ObjectState>) {
+pub fn clear_unpinned<K: Ord>(states: &mut BTreeMap<K, ObjectState>) {
     for s in states.values_mut() {
         if let TypeState::InjectionMap { points, pinned, .. } = &mut s.st
             && !*pinned

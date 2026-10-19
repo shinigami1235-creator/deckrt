@@ -79,9 +79,9 @@ pub struct SavedWindow {
 
 /// deckrt's state for one show. Lives on [`crate::show::Show`].
 pub struct Ext {
-    /// Object states by shape id. They persist across slide changes (a poll keeps its votes, a
+    /// Object states by slide and shape id. They persist across slide changes (a poll keeps its votes, a
     /// model its turn); an unpinned injection map drops its points when its slide is left.
-    pub states: BTreeMap<u32, ObjectState>,
+    pub states: BTreeMap<StateKey, ObjectState>,
     /// The slide the states were last brought up to date for.
     slide: Option<usize>,
     pub drag: Option<Drag>,
@@ -237,9 +237,21 @@ impl Map {
 /// One object on the slide, with its box in slide points.
 pub struct Item {
     pub id: u32,
+    /// The slide the object is on: shape ids are only unique within a slide.
+    pub slide: usize,
     pub shape: Shape,
     pub obj: InteractiveObject,
     pub xfrm: deckcraft_geom::Xfrm,
+}
+
+/// An object's state is kept by its slide and shape id, so objects with the same id on two slides
+/// (each slide numbers its shapes) don't share a state.
+pub type StateKey = (usize, u32);
+
+impl Item {
+    pub fn key(&self) -> StateKey {
+        (self.slide, self.id)
+    }
 }
 
 /// The objects on slide `idx`, in drawing order. Objects inside groups are left out.
@@ -252,7 +264,7 @@ pub fn objects_on(doc: &Presentation, idx: usize) -> Vec<Item> {
         .filter_map(|s| {
             let o = obj::read_any(s)?;
             let xfrm = s.xfrm?;
-            Some(Item { id: s.id.0, shape: s.clone(), obj: o, xfrm })
+            Some(Item { id: s.id.0, slide: idx, shape: s.clone(), obj: o, xfrm })
         })
         .collect()
 }
@@ -283,18 +295,18 @@ impl Ext {
             self.changed_at = f64::MAX;
         }
         for it in objects_on(doc, idx) {
-            self.states.entry(it.id).or_insert_with(|| ObjectState::initial(&it.obj));
+            self.states.entry(it.key()).or_insert_with(|| ObjectState::initial(&it.obj));
         }
     }
 
     pub fn state_of(&self, id: u32) -> Option<&ObjectState> {
-        self.states.get(&id)
+        self.states.get(&(self.slide.unwrap_or(0), id))
     }
 
     /// Fire an object (its shortcut, a click, the presenter's button). Returns whether anything
     /// changed.
     pub(crate) fn fire(&mut self, show_zoom: &mut Option<crate::show::Zoom>, it: &Item, now: f64, ctx: &egui::Context) -> bool {
-        let Some(st) = self.states.get_mut(&it.id) else { return false };
+        let Some(st) = self.states.get_mut(&it.key()) else { return false };
         let changed = st.fire(&it.obj, now);
         match (&st.st, &it.obj.config) {
             (TypeState::Zoom { zoomed, .. }, Config::Zoom(c)) => {
@@ -328,14 +340,14 @@ impl Ext {
     pub(crate) fn follow_zoom(&mut self, show_zoom: &Option<crate::show::Zoom>) {
         if show_zoom.is_none()
             && let Some(id) = self.zoom_owner.take()
-            && let Some(ObjectState { st: TypeState::Zoom { zoomed, .. }, .. }) = self.states.get_mut(&id)
+            && let Some(ObjectState { st: TypeState::Zoom { zoomed, .. }, .. }) = self.states.get_mut(&(self.slide.unwrap_or(0), id))
         {
             *zoomed = false;
         }
     }
 
     pub(crate) fn reset(&mut self, it: &Item, show_zoom: &mut Option<crate::show::Zoom>) {
-        if let Some(st) = self.states.get_mut(&it.id) {
+        if let Some(st) = self.states.get_mut(&it.key()) {
             st.reset(&it.obj);
         }
         if self.zoom_owner == Some(it.id) {
@@ -346,7 +358,7 @@ impl Ext {
     }
 
     pub fn set_visible(&mut self, id: u32, visible: bool) {
-        if let Some(st) = self.states.get_mut(&id) {
+        if let Some(st) = self.states.get_mut(&(self.slide.unwrap_or(0), id)) {
             st.visible = visible;
             self.changed_at = f64::MAX;
         }
@@ -354,7 +366,7 @@ impl Ext {
 
     /// The models on the slide that a phone may turn, in slide order, visible ones only.
     pub fn models_on(&self, doc: &Presentation, idx: usize) -> Vec<Item> {
-        objects_on(doc, idx).into_iter().filter(|it| it.obj.kind() == Kind::Model && self.states.get(&it.id).is_none_or(|s| s.visible)).collect()
+        objects_on(doc, idx).into_iter().filter(|it| it.obj.kind() == Kind::Model && self.states.get(&it.key()).is_none_or(|s| s.visible)).collect()
     }
 
     /// The first poll on the slide.
@@ -365,7 +377,7 @@ impl Ext {
     /// Turn `id` by a drag of `dx`, `dy` fractions of its surface (deckrt's rule: 240 degrees per
     /// width, 150 per height).
     pub fn turn_model(&mut self, id: u32, dx: f64, dy: f64, now: f64) {
-        if let Some(ObjectState { st: TypeState::Model { turn, .. }, .. }) = self.states.get_mut(&id) {
+        if let Some(ObjectState { st: TypeState::Model { turn, .. }, .. }) = self.states.get_mut(&(self.slide.unwrap_or(0), id)) {
             turn[0] += dx * 240.0;
             turn[1] = (turn[1] + dy * 150.0).clamp(-180.0, 180.0);
             if !self.turning.contains(&id) {
@@ -376,7 +388,7 @@ impl Ext {
     }
 
     pub fn zoom_model(&mut self, id: u32, factor: f64, now: f64) {
-        if let Some(ObjectState { st: TypeState::Model { zoom, .. }, .. }) = self.states.get_mut(&id) {
+        if let Some(ObjectState { st: TypeState::Model { zoom, .. }, .. }) = self.states.get_mut(&(self.slide.unwrap_or(0), id)) {
             *zoom = (*zoom * factor).clamp(0.2, 8.0);
             self.changed_at = now;
         }
@@ -444,7 +456,7 @@ pub fn draw(
     let ppp = ctx.pixels_per_point();
     let items = objects_on(doc, idx);
     for it in &items {
-        let Some(os) = ext.states.get(&it.id).cloned() else { continue };
+        let Some(os) = ext.states.get(&it.key()).cloned() else { continue };
         if !os.visible {
             continue;
         }
@@ -1041,7 +1053,7 @@ pub(crate) fn pointer(
                 if let Some(it) = items.iter().find(|it| it.id == id) {
                     let rect = map.rect(&it.xfrm);
                     let pos = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
-                    if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&id) {
+                    if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&(idx, id)) {
                         *position = pos;
                         ext.changed_at = now;
                     }
@@ -1056,7 +1068,7 @@ pub(crate) fn pointer(
                     if n > 1 {
                         let f = ((p.x - rect.min.x - 12.0) / (rect.width() - 24.0).max(1.0)).clamp(0.0, 1.0);
                         let i = (f * (n - 1) as f32).round() as usize;
-                        if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&id)
+                        if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&(idx, id))
                             && *index != i
                         {
                             *index = i;
@@ -1069,7 +1081,7 @@ pub(crate) fn pointer(
                 if let Some(it) = items.iter().find(|it| it.id == id) {
                     let rect = map.rect(&it.xfrm);
                     let to = [((p.x - rect.min.x) / rect.width().max(1.0)) as f64, ((p.y - rect.min.y) / rect.height().max(1.0)) as f64];
-                    if let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&id) {
+                    if let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&(idx, id)) {
                         *handles = measure::move_handle(*preset, handles, handle, to);
                         ext.changed_at = now;
                     }
@@ -1088,7 +1100,7 @@ pub(crate) fn pointer(
     let under = items.iter().rev().find(|it| {
         let r = map.rect(&it.xfrm);
         let r = if it.obj.kind() == Kind::Measure { r.expand(18.0) } else { r };
-        takes_input(it, role) && ext.states.get(&it.id).is_none_or(|s| s.visible) && r.contains(p)
+        takes_input(it, role) && ext.states.get(&it.key()).is_none_or(|s| s.visible) && r.contains(p)
     });
     let Some(it) = under else { return false };
     let rect = map.rect(&it.xfrm);
@@ -1119,7 +1131,7 @@ pub(crate) fn pointer(
     if !pressed && !clicked {
         return false;
     }
-    match (&it.obj.config, ext.states.get(&it.id).map(|s| s.st.clone())) {
+    match (&it.obj.config, ext.states.get(&it.key()).map(|s| s.st.clone())) {
         (Config::Model(_), _) => {
             if pressed {
                 ext.drag = Some(Drag::Model { id: it.id, last: p });
@@ -1131,7 +1143,7 @@ pub(crate) fn pointer(
             ext.drag = Some(Drag::Wipe { id: it.id });
             // The first press already moves the divider.
             let pos = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
-            if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.id) {
+            if let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.key()) {
                 *position = pos;
                 ext.changed_at = now;
             }
@@ -1146,7 +1158,7 @@ pub(crate) fn pointer(
                 ext.drag = Some(Drag::Scrub { id: it.id });
                 let f = ((p.x - rect.min.x - 12.0) / (rect.width() - 24.0).max(1.0)).clamp(0.0, 1.0);
                 let i = (f * (c.images.len() - 1) as f32).round() as usize;
-                if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id) {
+                if let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.key()) {
                     *index = i;
                     ext.changed_at = now;
                 }
@@ -1177,7 +1189,7 @@ pub(crate) fn pointer(
             }
             let x = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
             let y = ((p.y - rect.min.y) / rect.height().max(1.0)).clamp(0.0, 1.0) as f64;
-            if let Some(ObjectState { st: TypeState::InjectionMap { points, product, dose, .. }, .. }) = ext.states.get_mut(&it.id) {
+            if let Some(ObjectState { st: TypeState::InjectionMap { points, product, dose, .. }, .. }) = ext.states.get_mut(&it.key()) {
                 points.push(Point { x, y, product: *product, dose: *dose });
                 ext.changed_at = now;
             }
@@ -1192,7 +1204,7 @@ pub(crate) fn pointer(
             if p.y >= rect.max.y - th && !c.images.is_empty() {
                 let i =
                     (((p.x - rect.min.x) / rect.width().max(1.0)) * c.images.len() as f32).floor().clamp(0.0, c.images.len() as f32 - 1.0) as usize;
-                if let Some(ObjectState { st: TypeState::Swap { index, picker }, .. }) = ext.states.get_mut(&it.id) {
+                if let Some(ObjectState { st: TypeState::Swap { index, picker }, .. }) = ext.states.get_mut(&it.key()) {
                     *index = i;
                     *picker = false;
                     ext.changed_at = now;
@@ -1377,7 +1389,7 @@ pub(crate) fn presenter_rows(
         return;
     }
     for it in &items {
-        let Some(os) = ext.states.get(&it.id).cloned() else { continue };
+        let Some(os) = ext.states.get(&it.key()).cloned() else { continue };
         let label = it.obj.display_label();
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(&label).size(13.0).color(Color32::WHITE).strong());
@@ -1391,7 +1403,7 @@ pub(crate) fn presenter_rows(
                 (TypeState::Model { layers, .. }, Config::Model(_)) => {
                     for (name, on) in layers {
                         if row_button(ui, name, *on).clicked()
-                            && let Some(ObjectState { st: TypeState::Model { layers, .. }, .. }) = ext.states.get_mut(&it.id)
+                            && let Some(ObjectState { st: TypeState::Model { layers, .. }, .. }) = ext.states.get_mut(&it.key())
                         {
                             layers.insert(name.clone(), !on);
                             ext.changed_at = now;
@@ -1414,7 +1426,7 @@ pub(crate) fn presenter_rows(
                 (TypeState::Wipe { position }, Config::Wipe(_)) => {
                     let mut v = *position as f32;
                     if ui.add(egui::Slider::new(&mut v, 0.0..=1.0).show_value(false)).changed()
-                        && let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::Wipe { position }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *position = v as f64;
                         ext.changed_at = now;
@@ -1441,7 +1453,7 @@ pub(crate) fn presenter_rows(
                     if !*revealed
                         && n > 0
                         && row_button(ui, "Show results", false).clicked()
-                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *open = false;
                         *revealed = true;
@@ -1457,7 +1469,7 @@ pub(crate) fn presenter_rows(
                             if row_button(ui, &format!("{}{short}", if off { "Hidden: " } else { "" }), off)
                                 .on_hover_text("Click to hide it from the screen, or bring it back")
                                 .clicked()
-                                && let Some(ObjectState { st: TypeState::Poll { hidden, .. }, .. }) = ext.states.get_mut(&it.id)
+                                && let Some(ObjectState { st: TypeState::Poll { hidden, .. }, .. }) = ext.states.get_mut(&it.key())
                             {
                                 if !hidden.remove(pid) {
                                     hidden.insert(pid.clone());
@@ -1479,7 +1491,7 @@ pub(crate) fn presenter_rows(
                         && c.correct.is_some()
                         && !*revealed
                         && row_button(ui, "Reveal answer", false).clicked()
-                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *open = false;
                         *revealed = true;
@@ -1489,7 +1501,7 @@ pub(crate) fn presenter_rows(
                         && !*revealed
                         && !votes.is_empty()
                         && row_button(ui, "Show the split", false).clicked()
-                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::Poll { open, revealed, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *open = false;
                         *revealed = true;
@@ -1536,7 +1548,7 @@ pub(crate) fn presenter_rows(
                     let mut v = *index as f32;
                     if n > 1
                         && ui.add(egui::Slider::new(&mut v, 0.0..=(n - 1) as f32).step_by(1.0).show_value(false)).changed()
-                        && let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::Scrub { index }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *index = (v.round() as usize).min(n.saturating_sub(1));
                         ext.changed_at = now;
@@ -1549,7 +1561,7 @@ pub(crate) fn presenter_rows(
                 (TypeState::Measure { preset, handles }, Config::Measure(c)) => {
                     for p in measure::Preset::ALL {
                         if row_button(ui, p.label(), *preset == p).clicked()
-                            && let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&it.id)
+                            && let Some(ObjectState { st: TypeState::Measure { preset, handles }, .. }) = ext.states.get_mut(&it.key())
                         {
                             // A preset button starts that measurement with fresh handles, the
                             // active one included.
@@ -1577,7 +1589,7 @@ pub(crate) fn presenter_rows(
                             egui::Button::new(egui::RichText::new(&p.name).size(13.0).color(Color32::WHITE)).fill(fill).min_size(vec2(0.0, 26.0)),
                         );
                         if btn.clicked()
-                            && let Some(ObjectState { st: TypeState::InjectionMap { product, dose, .. }, .. }) = ext.states.get_mut(&it.id)
+                            && let Some(ObjectState { st: TypeState::InjectionMap { product, dose, .. }, .. }) = ext.states.get_mut(&it.key())
                         {
                             *product = i;
                             *dose = p.default_dose;
@@ -1586,18 +1598,18 @@ pub(crate) fn presenter_rows(
                     let mut d = *dose;
                     let unit = c.products.get(*product).map(|p| p.unit.as_str()).unwrap_or("");
                     if ui.add(egui::DragValue::new(&mut d).update_while_editing(false).speed(0.1).range(0.0..=1000.0).max_decimals(2).suffix(format!(" {unit}"))).changed()
-                        && let Some(ObjectState { st: TypeState::InjectionMap { dose, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::InjectionMap { dose, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *dose = d;
                     }
                     if row_button(ui, "Undo last", false).clicked()
-                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         points.pop();
                         ext.changed_at = now;
                     }
                     if row_button(ui, "Clear", false).clicked()
-                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         points.clear();
                         ext.changed_at = now;
@@ -1607,7 +1619,7 @@ pub(crate) fn presenter_rows(
                         .checkbox(&mut pin, egui::RichText::new("Pin").color(Color32::WHITE))
                         .on_hover_text("Keep the points when the slide changes")
                         .changed()
-                        && let Some(ObjectState { st: TypeState::InjectionMap { pinned, .. }, .. }) = ext.states.get_mut(&it.id)
+                        && let Some(ObjectState { st: TypeState::InjectionMap { pinned, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *pinned = pin;
                     }
@@ -2097,7 +2109,7 @@ mod tests {
         assert!(zoom.is_some());
         zoom = None;
         ext.follow_zoom(&zoom);
-        assert!(matches!(ext.states[&it.id].st, TypeState::Zoom { zoomed: false, .. }));
+        assert!(matches!(ext.states[&it.key()].st, TypeState::Zoom { zoomed: false, .. }));
     }
 
     /// Both windows share the object states and each reads its own pointer: a drag begun on the
@@ -2167,11 +2179,34 @@ mod tests {
         let mut ext = Ext::default();
         ext.sync_slide(&doc, 1);
         let id = objects_on(&doc, 1).pop().expect("the map").id;
-        if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&id) {
+        if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&(1, id)) {
             points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0 });
         }
         ext.sync_slide(&doc, 0);
         ext.sync_slide(&doc, 1);
-        assert!(matches!(&ext.states[&id].st, TypeState::InjectionMap { points, .. } if points.is_empty()));
+        assert!(matches!(&ext.states[&(1, id)].st, TypeState::InjectionMap { points, .. } if points.is_empty()));
+    }
+
+    /// Two slides that each have a poll with the same shape id keep their own votes.
+    #[test]
+    fn objects_with_the_same_id_on_two_slides_keep_their_own_state() {
+        let mut s = deckcraft_engine::Session::with_new();
+        for _ in 0..2 {
+            s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+            s.execute("interactive.insert", &serde_json::json!({"kind": "poll"})).expect("insert");
+        }
+        let doc = s.doc().expect("doc").doc.clone();
+        let (a, b) = (objects_on(&doc, 1).pop().expect("poll 1"), objects_on(&doc, 2).pop().expect("poll 2"));
+        let mut ext = Ext::default();
+        ext.sync_slide(&doc, 1);
+        if let Some(ObjectState { st: TypeState::Poll { votes, .. }, .. }) = ext.states.get_mut(&a.key()) {
+            votes.insert("phone".into(), 0);
+        }
+        ext.sync_slide(&doc, 2);
+        let votes = |ext: &Ext, it: &Item| match &ext.states[&it.key()].st {
+            TypeState::Poll { votes, .. } => votes.len(),
+            _ => 99,
+        };
+        assert_eq!((votes(&ext, &a), votes(&ext, &b)), (1, 0), "ids {} and {}", a.id, b.id);
     }
 }
