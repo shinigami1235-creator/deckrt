@@ -96,7 +96,7 @@ pub struct Ext {
     /// The zoom region object that set the show's zoom, if any.
     zoom_owner: Option<u32>,
     /// A web popup opened in the browser already, so it is not opened twice.
-    opened_web: Vec<u32>,
+    opened_web: Vec<StateKey>,
     pub phones: Option<Phones>,
     /// Live captions for this show.
     pub captions: Option<super::captions::Live>,
@@ -321,13 +321,15 @@ impl Ext {
             }
             (TypeState::Popup { open: true }, Config::Popup(c)) => {
                 if let PopupContent::Web { url } = &c.content
-                    && !self.opened_web.contains(&it.id)
+                    && !self.opened_web.contains(&it.key())
                     && (url.starts_with("http://") || url.starts_with("https://"))
                 {
-                    self.opened_web.push(it.id);
+                    self.opened_web.push(it.key());
                     ctx.open_url(egui::OpenUrl::new_tab(url.clone()));
                 }
             }
+            // Closed again: the next open opens the page again.
+            (TypeState::Popup { open: false }, Config::Popup(_)) => self.opened_web.retain(|k| *k != it.key()),
             _ => {}
         }
         if changed {
@@ -350,6 +352,7 @@ impl Ext {
         if let Some(st) = self.states.get_mut(&it.key()) {
             st.reset(&it.obj);
         }
+        self.opened_web.retain(|k| *k != it.key());
         if self.zoom_owner == Some(it.id) {
             *show_zoom = None;
             self.zoom_owner = None;
@@ -964,7 +967,9 @@ fn draw_choice(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: b
         let y = top + row_h * i as f32;
         let row = Rect::from_min_max(pos2(inner.min.x, y), pos2(inner.max.x, y + row_h - 4.0));
         let letter = (b'A' + (i % 26) as u8) as char;
-        let right = c.correct == Some(i);
+        // The right answer is marked only when the poll reveals it: Show the split shows the
+        // votes without giving the answer away.
+        let right = c.correct == Some(i) && c.reveal_correct;
         if show_split && (open || revealed) {
             let frac = pct.get(i).copied().unwrap_or(0) as f32 / 100.0;
             let bar = Rect::from_min_max(row.min, pos2(row.min.x + row.width() * frac, row.max.y));
@@ -1241,6 +1246,10 @@ pub(crate) fn take_next(show: &mut Show, doc: &Presentation, now: f64, ctx: &egu
     }
     show.ext.sync_slide(doc, idx);
     for it in objects_on(doc, idx) {
+        // An object hidden from the screen doesn't take Next: the click would run it unseen.
+        if show.ext.states.get(&it.key()).is_some_and(|s| !s.visible) {
+            continue;
+        }
         let used = show.ext.next_used.get(&it.id).copied().unwrap_or(0);
         if it.obj.next_clicks > used {
             show.ext.next_used.insert(it.id, used + 1);
@@ -1463,19 +1472,27 @@ pub(crate) fn presenter_rows(
                     if c.kind == PollKind::FreeText {
                         let list: Vec<(String, String)> = texts.iter().filter_map(|(id, t)| t.first().map(|a| (id.clone(), a.clone()))).collect();
                         let hidden_now = hidden.clone();
-                        for (pid, a) in list.iter().rev().take(8) {
-                            let off = hidden_now.contains(pid);
-                            let short: String = a.chars().take(48).collect();
-                            if row_button(ui, &format!("{}{short}", if off { "Hidden: " } else { "" }), off)
-                                .on_hover_text("Click to hide it from the screen, or bring it back")
-                                .clicked()
-                                && let Some(ObjectState { st: TypeState::Poll { hidden, .. }, .. }) = ext.states.get_mut(&it.key())
-                            {
-                                if !hidden.remove(pid) {
-                                    hidden.insert(pid.clone());
+                        // Every answer, in a list that scrolls, so any of them can be hidden.
+                        let mut toggle = None;
+                        egui::ScrollArea::vertical().id_salt(("deckrt-free-text", it.key())).max_height(180.0).show(ui, |ui| {
+                            for (pid, a) in list.iter() {
+                                let off = hidden_now.contains(pid);
+                                let short: String = a.chars().take(48).collect();
+                                if row_button(ui, &format!("{}{short}", if off { "Hidden: " } else { "" }), off)
+                                    .on_hover_text("Click to hide it from the screen, or bring it back")
+                                    .clicked()
+                                {
+                                    toggle = Some(pid.clone());
                                 }
-                                ext.changed_at = now;
                             }
+                        });
+                        if let Some(pid) = toggle
+                            && let Some(ObjectState { st: TypeState::Poll { hidden, .. }, .. }) = ext.states.get_mut(&it.key())
+                        {
+                            if !hidden.remove(&pid) {
+                                hidden.insert(pid);
+                            }
+                            ext.changed_at = now;
                         }
                     }
                     if row_button(ui, "Reset", false).clicked() {
@@ -1724,10 +1741,12 @@ pub fn set_audience_display(ctx: &egui::Context, show: &mut Show, index: usize) 
         return;
     }
     let was_presenter = show.ext.presenter_display;
+    let left = show.ext.audience;
     show.ext.audience = Some(index);
     if was_presenter == Some(index) {
-        // Swap: the presenter window takes the display the audience screen leaves.
-        show.ext.presenter_display = show.ext.displays.iter().map(|d| d.index).find(|i| *i != index);
+        // Swap: the presenter window takes the display the audience screen leaves (with three
+        // displays, not just any other one).
+        show.ext.presenter_display = left.filter(|i| *i != index).or_else(|| show.ext.displays.iter().map(|d| d.index).find(|i| *i != index));
         show.ext.move_presenter = true;
     }
     ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::SetMonitor(index));
@@ -2058,6 +2077,33 @@ mod tests {
         assert!(take_next(&mut show, &doc, 0.1, &ctx));
         assert!(!open(&show), "the second Next closes it again");
         assert!(!take_next(&mut show, &doc, 0.2, &ctx), "the third Next is the show's");
+    }
+
+    #[test]
+    fn a_hidden_object_does_not_take_next() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "popup", "object": {"next_clicks": 1}})).expect("insert");
+        let doc = s.doc().expect("doc").doc.clone();
+        let mut show = Show::new(&doc, 1, false, false);
+        let ctx = egui::Context::default();
+        show.ext.sync_slide(&doc, 1);
+        let id = objects_on(&doc, 1).pop().expect("popup").id;
+        show.ext.set_visible(id, false);
+        assert!(!take_next(&mut show, &doc, 0.0, &ctx), "Next goes to the show");
+    }
+
+    #[test]
+    fn swap_with_three_displays_puts_the_presenter_where_the_audience_was() {
+        let doc = deckcraft_model::defaults::new_presentation(None);
+        let ctx = egui::Context::default();
+        let mut show = Show::new(&doc, 0, false, false);
+        let d = |index: usize| deckcraft_show_ext::DisplayInfo { index, origin: [index as i32 * 1920, 0], size_px: [1920, 1080], scale: 1.0, primary: index == 0 };
+        show.ext.displays = vec![d(0), d(1), d(2)];
+        show.ext.audience = Some(2);
+        show.ext.presenter_display = Some(0);
+        set_audience_display(&ctx, &mut show, 0);
+        assert_eq!((show.ext.audience, show.ext.presenter_display), (Some(0), Some(2)));
     }
 
     #[test]

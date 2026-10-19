@@ -266,6 +266,24 @@ pub fn title() -> &'static str {
     "Rehearsal"
 }
 
+/// Once a frame: a rehearsal that's over keeps the microphone only while its report is being
+/// written in the open dialog. Closed early (Esc, the window's ×), the microphone goes off and the
+/// report is written from what was heard.
+pub fn release_if_closed(app: &mut SlideApp) {
+    let open = app.dialog.as_ref().is_some_and(|d| d.id == DIALOG);
+    if open || app.show.is_some() {
+        return;
+    }
+    let Some(done) = app.deckrt.coach.as_mut() else { return };
+    if done.ended.is_some() && done.live.captioner.is_some() {
+        done.live.take_events();
+        done.live.captioner = None;
+        if done.report.is_none() {
+            done.report = Some(coach::analyse(&done.live.heard, &done.live.spans, &done.live.texts));
+        }
+    }
+}
+
 /// The report. Returns whether the dialog closes.
 pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
     let now = ui.input(|i| i.time);

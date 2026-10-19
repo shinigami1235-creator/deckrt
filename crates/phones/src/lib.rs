@@ -143,6 +143,10 @@ impl PhoneServer {
     pub fn set_slides(&self, dir: std::path::PathBuf, count: u32) {
         self.hub.presenter_slides(dir, count);
     }
+    /// deckrt: slide `n` (1-based) has been shown; until then phones can't fetch its picture.
+    pub fn shown(&self, n: u32) {
+        self.hub.presenter_shown(n);
+    }
     pub fn set_live(&self, slide: u32, version: u32, jpeg: Vec<u8>) {
         self.hub.presenter_live(protocol::LiveFrame { slide, version, jpeg });
     }
@@ -153,6 +157,11 @@ impl PhoneServer {
     }
 
     pub fn stop(mut self) {
+        // deckrt: a last message to the phones ("ended") needs a moment to leave before the
+        // connections close with the server.
+        if self.hub.connected() > 0 {
+            self.rt.block_on(tokio::time::sleep(std::time::Duration::from_millis(250)));
+        }
         self.hub.presenter_detach(self.serial);
         if let Some(r) = self.running.take() {
             self.rt.block_on(r.stop());

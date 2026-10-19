@@ -226,6 +226,9 @@ pub enum PresenterMessage {
     /// them out at `GET /slide/<n>?t=<token>` by number alone; no request
     /// ever names a file.
     Slides { dir: String, count: u32 },
+    /// deckrt: slide `n` (1-based) has been shown, so its picture may be handed out. Slides not
+    /// shown yet stay private.
+    Shown { n: u32 },
 }
 
 pub fn parse_presenter(text: &str) -> Option<PresenterMessage> {

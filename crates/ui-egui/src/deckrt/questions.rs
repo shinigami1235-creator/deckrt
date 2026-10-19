@@ -74,6 +74,33 @@ impl Questions {
         true
     }
 
+    /// Drop everything from one phone: its questions and its votes on the others (Eject).
+    pub fn forget(&mut self, from: &str) {
+        self.list.retain(|q| q.from != from);
+        for q in &mut self.list {
+            q.votes.remove(from);
+        }
+        if self.shown.as_ref().is_some_and(|id| !self.list.iter().any(|q| &q.id == id)) {
+            self.shown = None;
+        }
+    }
+
+    /// Why `ask` turned a question down, in the words the phone shows.
+    pub fn why_refused(&self, from: &str, text: &str) -> &'static str {
+        let text = deckcraft_interactive::poll::clean_text(text);
+        if self.closed {
+            "The presenter isn't taking questions right now."
+        } else if text.is_empty() {
+            "Type a question first."
+        } else if self.list.len() >= MAX {
+            "There are too many questions already."
+        } else if self.list.iter().any(|q| q.from == from && q.text.eq_ignore_ascii_case(&text)) {
+            "You asked that one already."
+        } else {
+            "You have five questions waiting. Ask again once one is answered."
+        }
+    }
+
     /// Back a question or take the backing back. A phone can't back a hidden question.
     pub fn vote(&mut self, from: &str, q: &str, on: bool) -> bool {
         let Some(item) = self.list.iter_mut().find(|x| x.id == q && x.state != QState::Hidden) else { return false };
@@ -251,6 +278,21 @@ mod tests {
         assert!(!q.ask("d", None, "Late", false, 4.0));
         let phones = q.for_phones();
         assert_eq!(phones.as_array().map(|a| a.len()), Some(2));
+    }
+
+    #[test]
+    fn a_refusal_says_why_and_eject_forgets_the_phone() {
+        let mut q = Questions::default();
+        assert!(q.ask("a", None, "First?", false, 1.0));
+        assert!(!q.ask("a", None, "first?", false, 2.0));
+        assert_eq!(q.why_refused("a", "first?"), "You asked that one already.");
+        assert!(q.ask("b", None, "Second?", false, 3.0));
+        assert!(q.vote("a", "q2", true));
+        q.shown = Some("q1".into());
+        q.forget("a");
+        assert_eq!(q.list.len(), 1);
+        assert!(q.list[0].votes.is_empty(), "its backing goes too");
+        assert_eq!(q.shown, None, "its question leaves the screen");
     }
 
     #[test]

@@ -288,6 +288,12 @@ async fn slide_images_are_served_by_number_with_the_token_and_nothing_else() {
     send(&mut p, json!({ "t": "slides", "dir": dir.path().to_string_lossy(), "count": 2 })).await;
     // A moment for the message to land.
     tokio::time::sleep(Duration::from_millis(100)).await;
+    // deckrt: a slide not shown yet isn't handed out.
+    let (head, _) = http_get(r.port, &format!("/slide/1?t={t}")).await;
+    assert!(head.starts_with("HTTP/1.1 404"), "{head}");
+    send(&mut p, json!({ "t": "shown", "n": 1 })).await;
+    send(&mut p, json!({ "t": "shown", "n": 2 })).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let (head, body) = http_get(r.port, &format!("/slide/1?t={t}")).await;
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
     assert!(head.to_ascii_lowercase().contains("content-type: image/jpeg"), "{head}");

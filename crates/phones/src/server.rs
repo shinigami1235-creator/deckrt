@@ -94,6 +94,9 @@ struct Inner {
     slides: Option<(std::path::PathBuf, u32)>,
     /// The presenter's newest composite. One is enough: a phone only ever wants the current picture.
     live: Option<Arc<LiveFrame>>,
+    /// deckrt: the slides shown so far (1-based). Only these are served, so a phone can't fetch the
+    /// slides still to come.
+    shown: HashSet<u32>,
 }
 
 pub struct Hub {
@@ -151,6 +154,16 @@ impl Hub {
         let exists = inner.phones.contains_key(id);
         if !exists && Self::live_count(&inner) >= self.max_phones {
             return Err(protocol::CLOSE_FULL);
+        }
+        // deckrt: phones that left keep their place (and name) for when they come back, but no more
+        // than a few rooms' worth: past that the ones gone longest are forgotten, so a stream of
+        // new ids can't grow the list without end.
+        if !exists {
+            let keep = self.max_phones.saturating_mul(4).max(16);
+            while inner.phones.len() >= keep {
+                let Some(oldest) = inner.phones.iter().filter(|(_, p)| p.tx.is_none()).min_by_key(|(_, p)| p.serial).map(|(k, _)| k.clone()) else { break };
+                inner.phones.remove(&oldest);
+            }
         }
         inner.serial += 1;
         let serial = inner.serial;
@@ -303,6 +316,10 @@ impl Hub {
     pub fn presenter_slides(&self, dir: std::path::PathBuf, count: u32) {
         self.set_slides(dir, count)
     }
+    /// deckrt: slide `n` (1-based) has been on screen, so phones may have its picture.
+    pub fn presenter_shown(&self, n: u32) {
+        self.lock().shown.insert(n);
+    }
     pub fn presenter_live(&self, frame: LiveFrame) {
         self.set_live(frame)
     }
@@ -328,7 +345,7 @@ impl Hub {
     fn slide_file(&self, n: u32) -> Option<std::path::PathBuf> {
         let inner = self.lock();
         let (dir, count) = inner.slides.as_ref()?;
-        (n >= 1 && n <= *count).then(|| dir.join(format!("slide-{n:03}.jpg")))
+        (n >= 1 && n <= *count && inner.shown.contains(&n)).then(|| dir.join(format!("slide-{n:03}.jpg")))
     }
 
     fn set_live(&self, frame: LiveFrame) {
@@ -645,6 +662,7 @@ async fn presenter_socket(socket: WebSocket, hub: Arc<Hub>) {
                 Hub::send_roster(&inner);
             }
             PresenterMessage::Slides { dir, count } => hub.set_slides(std::path::PathBuf::from(dir), count),
+            PresenterMessage::Shown { n } => hub.presenter_shown(n),
         }
     }
     hub.detach_presenter(serial);
@@ -759,6 +777,26 @@ pub async fn self_test(url: &str, timeout: Duration) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stream of phones that come and go doesn't grow the list without end, and the ones still
+    /// connected are never the ones forgotten.
+    #[test]
+    fn phones_that_left_are_forgotten_past_a_limit() {
+        let hub = Hub { token: "t".into(), presenter_token: "p".into(), max_phones: 4, inner: Mutex::new(Inner::default()), stats: Stats::default() };
+        let (tx, _rx) = mpsc::channel(4);
+        let here = hub.attach_phone("here", tx.clone()).unwrap();
+        let _ = here;
+        for i in 0..200 {
+            let id = format!("p{i}");
+            let serial = hub.attach_phone(&id, tx.clone()).unwrap();
+            hub.join(&id, format!("Phone {i}"));
+            hub.detach_phone(&id, serial);
+        }
+        let inner = hub.lock();
+        assert!(inner.phones.len() <= 16, "{} kept", inner.phones.len());
+        assert!(inner.phones.contains_key("here"));
+        assert!(inner.phones.contains_key("p199"));
+    }
 
     #[tokio::test]
     async fn the_next_port_is_taken_when_the_first_is_busy() {

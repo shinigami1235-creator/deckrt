@@ -32,6 +32,12 @@ in the test build so far.
   on the open tab no longer hides the ribbon, Enter in the SmartArt items no longer inserts the
   graphic, a failed video export leaves no broken file, and the pane's text and number boxes
   make one undo step each.
+- **Fixes in the show:** polls and other objects on different slides no longer share their votes
+  or state, Show the split no longer gives away the right answer, Eject drops everything that
+  phone sent and keeps it out after the address changes, every typed answer can be hidden, phones
+  only get the pictures of slides already shown, Swap works with three displays, a hidden object
+  no longer takes Next, a web popup opens its page each time, and the coach's microphone goes off
+  when its report is closed early.
 - **Present in Presenter View** (Slide Show tab, or Alt+F5) opens presenter view on one screen,
   so you can see it and practise without a projector.
 

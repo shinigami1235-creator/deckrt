@@ -236,7 +236,8 @@ pub fn section(ui: &mut Ui, crowd: &mut Crowd, slide: usize) -> bool {
             mark(ui.painter(), r.center(), 7.5, i, 1.0);
             ui.label(egui::RichText::new(n.to_string()).size(12.0).color(Color32::from_gray(200))).on_hover_text(KINDS[i].1);
         }
-        if ui.small_button(if crowd.reactions_on { "Hide from screen" } else { "Show on screen" }).clicked() {
+        // Off means the phones can't send them, not just that the screen doesn't show them.
+        if ui.small_button(if crowd.reactions_on { "Turn off" } else { "Turn on" }).on_hover_text("Reactions from the phones").clicked() {
             crowd.reactions_on = !crowd.reactions_on;
             changed = true;
         }

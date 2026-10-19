@@ -104,7 +104,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     // Typing in a field, or dragging a slider or colour in the pane, is one undo step: a live
     // step stays open while it goes on and ends the frame after (format_picture::end_frame).
     let typing = ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::new(TYPING))).unwrap_or(false);
-    let dragging = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.primary_down()) && ui.rect_contains_pointer(ui.max_rect());
+    // A colour picker opens in a popup of its own, outside the pane: a drag there counts too.
+    let dragging = ui.ctx().dragged_id().is_some()
+        && ui.input(|i| i.pointer.primary_down())
+        && (ui.rect_contains_pointer(ui.max_rect()) || egui::Popup::is_any_open(ui.ctx()));
     if typing || dragging {
         if deckcraft_engine::cmd::deckrt_live::open_label(&app.session).is_none() {
             deckcraft_engine::cmd::deckrt_live::begin(&mut app.session, if typing { "Typing" } else { "Change" });

@@ -154,6 +154,7 @@ pub fn icon(kind: Kind) -> Icon {
 /// state is dropped for shapes that are gone.
 pub fn logic(app: &mut SlideApp) {
     video::poll(app);
+    coach::release_if_closed(app);
     let Some(st) = app.session.active() else { return };
     let selected = st.selected_shapes().first().map(|s| (s.id.0, obj::is_live(s)));
     match selected {

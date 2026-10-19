@@ -152,6 +152,8 @@ pub struct Phones {
     caption: Option<String>,
     /// Reactions and the feedback form.
     pub crowd: super::crowd::Crowd,
+    /// Phones ejected this show, refused again when the server restarts on another address.
+    banned: BTreeSet<String>,
 }
 
 impl Phones {
@@ -169,7 +171,10 @@ impl Phones {
             .or_else(|| deckcraft_phones::pick_default(&addresses).map(|a| a.address.clone()))
             .or_else(|| addresses.first().map(|a| a.address.clone()))
             .unwrap_or_else(|| "127.0.0.1".to_string());
-        let ips: Vec<std::net::IpAddr> = addresses.iter().filter_map(|a| a.address.parse().ok()).collect();
+        // Listen on the room's private addresses, and on a public one only when it is the one the
+        // QR code shows (a network that hands out public addresses), never on every address the
+        // laptop has.
+        let ips: Vec<std::net::IpAddr> = addresses.iter().filter(|a| a.private || a.address == chosen).filter_map(|a| a.address.parse().ok()).collect();
         let (server, status, url) = match deckcraft_phones::PhoneServer::start_with_token(ips, PORT, token) {
             Ok(s) => {
                 let url = s.url_for(&chosen);
@@ -209,6 +214,7 @@ impl Phones {
             seen: BTreeSet::new(),
             caption: None,
             crowd: Default::default(),
+            banned: BTreeSet::new(),
         }
     }
 
@@ -244,6 +250,16 @@ impl Phones {
         {
             s.set_slides(dir, n);
         }
+        // The new server starts empty: it learns again which slides phones may see and which
+        // phones were ejected.
+        if let Some(s) = &self.server {
+            for n in &self.seen {
+                s.shown(*n);
+            }
+            for id in &self.banned {
+                s.eject(id);
+            }
+        }
         *ext_changed = true;
     }
 
@@ -252,7 +268,10 @@ impl Phones {
         if self.slides.is_some() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("deckrt-phones-{}", std::process::id()));
+        // A folder of this show's own: a second show in the same run never hands out the first
+        // deck's pictures.
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("deckrt-phones-{}-{stamp}", std::process::id()));
         let (tx, rx) = channel();
         let doc = doc.clone();
         let out = dir.clone();
@@ -330,6 +349,9 @@ impl Phones {
             }
         }
         if !blackout && self.seen.insert(idx as u32 + 1) {
+            if let Some(s) = self.server.as_ref() {
+                s.shown(idx as u32 + 1);
+            }
             self.last_show.clear();
         }
         let Some(server) = self.server.as_mut() else { return redraw };
@@ -521,11 +543,7 @@ impl Phones {
                             self.last_show.clear();
                             tell_you.push(id);
                         } else if let Some(s) = &self.server {
-                            let why = if self.questions.closed {
-                                "The presenter isn't taking questions right now."
-                            } else {
-                                "That question wasn't added. You may have five waiting at once."
-                            };
+                            let why = self.questions.why_refused(&id, &text);
                             s.send(&id, &json!({"t": "error", "code": "ask", "text": why}));
                         }
                     }
@@ -663,7 +681,8 @@ impl Phones {
             "live": live,
             "poll": poll_msg,
             "control": {
-                "holders": self.queue.holders.iter().map(|id| json!({"id": id, "name": self.names.get(id).cloned().unwrap_or_default()})).collect::<Vec<_>>(),
+                // Names only: a phone id is what a phone connects with, so it stays private to that phone.
+                "holders": self.queue.holders.iter().map(|id| json!({"name": self.names.get(id).cloned().unwrap_or_default()})).collect::<Vec<_>>(),
                 "waiting": self.queue.queue.len(),
                 "max": self.queue.max,
             },
@@ -730,11 +749,18 @@ impl Phones {
     /// Close the phone, refuse its id for the rest of the show, drop its votes.
     pub fn eject(&mut self, id: &str, states: &mut BTreeMap<StateKey, ObjectState>, pointer: &mut Option<[f32; 2]>) {
         self.queue.withdraw(id);
+        // Everything the phone sent goes: votes, typed answers, rankings, questions and the
+        // votes it gave other questions, and its feedback.
         for s in states.values_mut() {
-            if let TypeState::Poll { votes, .. } = &mut s.st {
+            if let TypeState::Poll { votes, texts, ranks, .. } = &mut s.st {
                 votes.remove(id);
+                texts.remove(id);
+                ranks.remove(id);
             }
         }
+        self.questions.forget(id);
+        self.crowd.answers.remove(id);
+        self.banned.insert(id.to_string());
         if let Some(s) = &self.server {
             s.eject(id);
         }
