@@ -1682,11 +1682,11 @@ pub fn place_show(ctx: &egui::Context, show: &mut Show, displays: Vec<DisplayInf
             ctx.send_viewport_cmd(egui::ViewportCommand::SetMonitor(audience));
         }
         _ => {
-            // One screen: the show alone, as PowerPoint does, unless recording or the coach
-            // needs presenter view's controls, or Present in Presenter View asked for it. Then
-            // presenter view covers the screen, over the show.
-            if show.ext.displays.len() == 1 && !show.ext.record_wanted && !show.ext.coach_wanted && !show.ext.practice {
-                show.presenter = false;
+            // One screen: with Presenter View on (Slide Show tab), presenter view covers the
+            // screen, over the show, so the notes and controls are there without a projector.
+            // With it off, the show alone, unless recording or the coach needs its controls.
+            if show.ext.displays.len() <= 1 && (show.presenter || show.ext.record_wanted || show.ext.coach_wanted) {
+                show.ext.practice = true;
             }
             if show.ext.practice {
                 // The show stays in the editor's window, behind presenter view, rather than
@@ -2134,7 +2134,8 @@ mod tests {
     fn presenter_view_opens_mid_show_on_one_screen() {
         let doc = deckcraft_model::defaults::new_presentation(None);
         let ctx = egui::Context::default();
-        let mut show = Show::new(&doc, 0, false, true);
+        // Presenter View off on the Slide Show tab: the show alone, until the toolbar asks.
+        let mut show = Show::new(&doc, 0, false, false);
         let one = deckcraft_show_ext::DisplayInfo { index: 0, origin: [0, 0], size_px: [1920, 1080], scale: 1.0, primary: true };
         place_show(&ctx, &mut show, vec![one]);
         assert!(!show.presenter, "one screen: the show alone");
@@ -2148,14 +2149,22 @@ mod tests {
         let doc = deckcraft_model::defaults::new_presentation(None);
         let ctx = egui::Context::default();
         let one = || vec![DisplayInfo { index: 0, origin: [0, 0], size_px: [1920, 1080], scale: 1.0, primary: true }];
+        let mut show = Show::new(&doc, 0, false, false);
+        place_show(&ctx, &mut show, one());
+        assert!(!show.presenter, "with Presenter View off, a show on one screen is the show alone");
+        // Presenter View on (the default): presenter view covers the one screen, no projector needed.
         let mut show = Show::new(&doc, 0, false, true);
         place_show(&ctx, &mut show, one());
-        assert!(!show.presenter, "a plain show on one screen is the show alone");
+        assert!(show.presenter && show.ext.practice);
+        assert_eq!(show.ext.presenter_display, Some(0), "presenter view covers the one screen");
+        // A computer that can't list its displays (the Mac for now) counts as one screen.
+        let mut show = Show::new(&doc, 0, false, true);
+        place_show(&ctx, &mut show, vec![]);
+        assert!(show.presenter && show.ext.practice);
         let mut show = Show::new(&doc, 0, false, false);
         show.ext.practice = true;
         place_show(&ctx, &mut show, one());
         assert!(show.presenter);
-        assert_eq!(show.ext.presenter_display, Some(0), "presenter view covers the one screen");
     }
 
     #[test]

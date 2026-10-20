@@ -2097,7 +2097,16 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
             app.start_show(i, false);
         }
         let on = app.ui.presenter_view;
-        if big_button_ex(ui, Icon::PresenterView, "Presenter\nView", true, false, on).0.clicked() {
+        // deckrt hook: on, the show opens with presenter view even with no projector.
+        if big_button_ex(ui, Icon::PresenterView, "Presenter\nView", true, false, on)
+            .0
+            .on_hover_text(if on {
+                "On: the show opens with presenter view, its notes and controls. With no projector it covers this screen. Click to show the slides alone."
+            } else {
+                "Off: the show is the slides alone. Click to open presenter view with the show."
+            })
+            .clicked()
+        {
             app.ui.presenter_view = !on;
         }
         crate::deckrt::show::practice_button(app, ui); // deckrt hook: Present in Presenter View
