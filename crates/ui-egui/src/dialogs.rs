@@ -2057,14 +2057,28 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             match tab.as_str() {
                 "contributors" | "models" => {
                     // The credits need room for the table; the About tab keeps its compact size.
-                    ui.set_min_size(vec2(640.0, 380.0));
-                    ui.set_max_height(380.0);
-                    if tab == "models" { crate::credits::models_ui(ui) } else { crate::credits::contributors_ui(ui) }
+                    // deckrt hook: in a box of their own under the tabs (sizing the dialog's own
+                    // area drew the credits' header over the tab row).
+                    ui.allocate_ui_with_layout(vec2(640.0, 380.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.set_min_size(vec2(640.0, 380.0));
+                        ui.set_max_height(380.0);
+                        if tab == "models" { crate::credits::models_ui(ui) } else { crate::credits::contributors_ui(ui) }
+                    });
                 }
                 _ => about(app, ui),
             }
-            let (ok, _) = buttons(ui, "Close");
-            ok
+            // deckrt hook: About has nothing to cancel, so Close alone.
+            let mut close = false;
+            ui.add_space(8.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let t = Tokens::get(ui.ctx());
+                if ui.add(egui::Button::new(egui::RichText::new("Close").color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0))).clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
+                    close = true;
+                }
+            });
+            close
         }
         "autocorrect" => {
             let pr = &mut app.session.prefs;

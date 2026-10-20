@@ -151,6 +151,7 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/panes.rs` (round 9) | Animation Pane: reorder arrows at the top, `Title 1: text` names, the selected row's arrow opens its menu (`anim_row_menu`), the timeline keeps room for the arrow, the seconds ruler sits at the foot |
 | `crates/ui-egui/src/show.rs` (round 9) | show keys leave a focused text box alone (`deckrt::show::typing`); Esc only leaves the box |
 | `crates/ui-egui/src/show.rs` (round 9) | the show toolbar's Presenter View button (`deckrt::show::presenter_view_now`), and `TOOL_BAR_W` is 640 to fit it |
+| `crates/ui-egui/src/dialogs.rs` (round 9) | About's Contributors and Models tabs sit in a box of their own (their header was drawn over the tab row) and About has Close only |
 | `crates/ui-egui/src/browsetheme_tests.rs`, `font_dialog_tests.rs`, `paragraph_dialog_tests.rs`, `replacefonts_tests.rs` (round 9) | reach Browse for Themes, Font, Paragraph and Replace Fonts the new way |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
 | `.github/workflows/*` | upstream's workflows are parked in `.github/upstream-workflows-disabled/` |
