@@ -1051,6 +1051,10 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
         if b(&mut child, show.zoom_label()).clicked() {
             show.zoom_key();
         }
+        // deckrt hook: presenter view on this screen, mid-show (no projector needed).
+        if crate::deckrt::show::presenter_view_button(&mut child, &show) {
+            crate::deckrt::show::presenter_view_now(&ctx, &mut show);
+        }
         if b(&mut child, "End").clicked() {
             keep = false;
         }
@@ -1489,7 +1493,7 @@ const GOTO_HOLD: f64 = 3.0;
 const GOTO_DIGITS: usize = 4;
 const ZOOM_SCALE: f32 = 2.0;
 const GRID_CAP: usize = 48;
-const TOOL_BAR_W: f32 = 520.0;
+const TOOL_BAR_W: f32 = 640.0; // deckrt hook: room for Presenter View
 const NOTES_DEFAULT: f32 = 18.0;
 const NOTES_MIN: f32 = 12.0;
 const NOTES_MAX: f32 = crate::deckrt::notes::NOTES_MAX; // deckrt hook: was 48

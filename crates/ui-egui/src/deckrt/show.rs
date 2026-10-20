@@ -1711,6 +1711,25 @@ pub fn present_in_presenter_view(app: &mut SlideApp) {
     }
 }
 
+/// During a show on one screen: open presenter view over it, as Present in Presenter View does
+/// from the start. The show leaves full screen and stays in the window behind presenter view.
+pub fn presenter_view_now(ctx: &egui::Context, show: &mut Show) {
+    show.ext.practice = true;
+    show.presenter = true;
+    show.ext.presenter_display = show.ext.audience.or_else(|| show.ext.displays.first().map(|d| d.index));
+    ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Fullscreen(false));
+}
+
+/// The show toolbar's Presenter View button, while presenter view isn't open. Returns the click.
+pub fn presenter_view_button(ui: &mut Ui, show: &Show) -> bool {
+    if show.presenter {
+        return false;
+    }
+    ui.add(egui::Button::new(egui::RichText::new("Presenter View").color(Color32::WHITE).size(15.0)).frame(false))
+        .on_hover_text("Presenter view on this screen, with the notes, the next slide and the phones")
+        .clicked()
+}
+
 /// The Slide Show tab's button for it, after Presenter View.
 pub fn practice_button(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
@@ -1833,6 +1852,11 @@ use crate::SlideApp;
 /// the phones are served and sent a live picture when something they can see changed.
 pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc<Presentation>, now: f64) {
     let idx = show.state.slide;
+    // Presenter view on one screen was closed: the show goes back to full screen.
+    if show.ext.practice && !show.presenter && !show.reading {
+        show.ext.practice = false;
+        ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Fullscreen(true));
+    }
     super::notes::start(app, show);
     show.ext.sync_slide(doc, idx);
     if !show.reading && !show.preview_only {
@@ -2104,6 +2128,19 @@ mod tests {
         show.ext.presenter_display = Some(0);
         set_audience_display(&ctx, &mut show, 0);
         assert_eq!((show.ext.audience, show.ext.presenter_display), (Some(0), Some(2)));
+    }
+
+    #[test]
+    fn presenter_view_opens_mid_show_on_one_screen() {
+        let doc = deckcraft_model::defaults::new_presentation(None);
+        let ctx = egui::Context::default();
+        let mut show = Show::new(&doc, 0, false, true);
+        let one = deckcraft_show_ext::DisplayInfo { index: 0, origin: [0, 0], size_px: [1920, 1080], scale: 1.0, primary: true };
+        place_show(&ctx, &mut show, vec![one]);
+        assert!(!show.presenter, "one screen: the show alone");
+        presenter_view_now(&ctx, &mut show);
+        assert!(show.presenter && show.ext.practice);
+        assert_eq!(show.ext.presenter_display, Some(0));
     }
 
     #[test]
