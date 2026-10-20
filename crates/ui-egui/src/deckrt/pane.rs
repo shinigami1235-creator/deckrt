@@ -492,7 +492,13 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                             changed = true;
                         }
                     });
-                    let resp = ui.add(egui::DragValue::new(&mut c.products[i].default_dose).update_while_editing(false).speed(0.1).range(0.0..=1000.0).max_decimals(2));
+                    let resp = ui.add(
+                        egui::DragValue::new(&mut c.products[i].default_dose)
+                            .update_while_editing(false)
+                            .speed(0.1)
+                            .range(0.0..=1000.0)
+                            .max_decimals(2),
+                    );
                     if committed(ui, resp, &mut c.products[i].default_dose) {
                         changed = true;
                     }
@@ -535,9 +541,18 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             changed = true;
         }
     });
-    hint(ui, "Next is the clicker, the arrow keys or a click on the slide. It runs the object after the slide's animations, then goes on to the next slide.");
+    hint(
+        ui,
+        "Next is the clicker, the arrow keys or a click on the slide. It runs the object after the slide's animations, then goes on to the next slide.",
+    );
     label(ui, "Runs by itself");
-    let mode = if next.after_animations { 2 } else if next.with_slide { 1 } else { 0 };
+    let mode = if next.after_animations {
+        2
+    } else if next.with_slide {
+        1
+    } else {
+        0
+    };
     ui.horizontal_wrapped(|ui| {
         for (m, name) in [(0, "No"), (1, "When the slide opens"), (2, "After the slide's animations")] {
             if ui.selectable_label(mode == m, name).clicked() && mode != m {
@@ -750,7 +765,9 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::Zoom(c) => {
             ui.horizontal(|ui| {
                 ui.label("Largest magnification");
-                let resp = ui.add(egui::DragValue::new(&mut c.max_scale).update_while_editing(false).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1));
+                let resp = ui.add(
+                    egui::DragValue::new(&mut c.max_scale).update_while_editing(false).speed(0.1).range(1.0..=20.0).suffix("×").fixed_decimals(1),
+                );
                 if committed(ui, resp, &mut c.max_scale) {
                     changed = true;
                 }

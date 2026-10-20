@@ -52,13 +52,16 @@ fn take_windows() -> Vec<Shot> {
     match test_image() {
         Some(s) => {
             let (hw, hh) = (s.w / 2, s.h / 2);
-            [crop(&s, 0, 0, hw, hh).map(|mut c| {
-                c.title = "Test window one".into();
-                c
-            }), crop(&s, hw, hh, hw, hh).map(|mut c| {
-                c.title = "Test window two".into();
-                c
-            })]
+            [
+                crop(&s, 0, 0, hw, hh).map(|mut c| {
+                    c.title = "Test window one".into();
+                    c
+                }),
+                crop(&s, hw, hh, hw, hh).map(|mut c| {
+                    c.title = "Test window two".into();
+                    c
+                }),
+            ]
             .into_iter()
             .flatten()
             .collect()
@@ -142,7 +145,8 @@ fn menu(app: &mut SlideApp, ui: &mut Ui) {
             ui.painter().rect_stroke(fit, CornerRadius::ZERO, Stroke::new(1.0, t.border), egui::StrokeKind::Outside);
             let g = ui.painter().layout(shot.title.clone(), crate::theme::font(11.0), t.text, r.width() - 8.0);
             let first_line = g.rows.first().map(|row| row.rect().height()).unwrap_or(14.0);
-            let clip = ui.painter().with_clip_rect(Rect::from_min_size(pos2(r.min.x + 4.0, pic.max.y + 4.0), vec2(r.width() - 8.0, first_line + 1.0)));
+            let clip =
+                ui.painter().with_clip_rect(Rect::from_min_size(pos2(r.min.x + 4.0, pic.max.y + 4.0), vec2(r.width() - 8.0, first_line + 1.0)));
             clip.galley(pos2(r.min.x + 4.0, pic.max.y + 4.0), g, t.text);
             if resp.on_hover_text(&shot.title).clicked() {
                 picked = Some(shot.clone());
@@ -186,7 +190,12 @@ fn start_clip(app: &mut SlideApp, ctx: &egui::Context) {
     };
     let px = (origin[0] - shot.origin[0]).max(0) as u32;
     let py = (origin[1] - shot.origin[1]).max(0) as u32;
-    let part = [px.min(shot.w.saturating_sub(1)), py.min(shot.h.saturating_sub(1)), size[0].min(shot.w - px.min(shot.w)), size[1].min(shot.h - py.min(shot.h))];
+    let part = [
+        px.min(shot.w.saturating_sub(1)),
+        py.min(shot.h.saturating_sub(1)),
+        size[0].min(shot.w - px.min(shot.w)),
+        size[1].min(shot.h - py.min(shot.h)),
+    ];
     let frame = [origin[0] as f32 / scale, origin[1] as f32 / scale, part[2] as f32 / scale, part[3] as f32 / scale];
     app.deckrt.screenshot.clip = Some(Clip { shot: Arc::new(shot), part, frame, tex: None, from: None, to: None, focused: false });
 }
@@ -230,7 +239,10 @@ pub fn frame(app: &mut SlideApp, ctx: &egui::Context) {
             let sel = clip.from.zip(clip.to).map(|(a, b)| Rect::from_two_pos(a, b).intersect(full));
             if let Some(s) = sel {
                 let k = vec2(1.0 / full.width().max(1.0), 1.0 / full.height().max(1.0));
-                let suv = Rect::from_min_max(pos2((s.min.x - full.min.x) * k.x, (s.min.y - full.min.y) * k.y), pos2((s.max.x - full.min.x) * k.x, (s.max.y - full.min.y) * k.y));
+                let suv = Rect::from_min_max(
+                    pos2((s.min.x - full.min.x) * k.x, (s.min.y - full.min.y) * k.y),
+                    pos2((s.max.x - full.min.x) * k.x, (s.max.y - full.min.y) * k.y),
+                );
                 p.image(tex.id(), s, suv, Color32::WHITE);
                 p.rect_stroke(s, CornerRadius::ZERO, Stroke::new(1.5, Color32::from_rgb(0xE0, 0x4E, 0x1B)), egui::StrokeKind::Outside);
             } else {

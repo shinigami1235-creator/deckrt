@@ -65,8 +65,8 @@ fn playing_pointer(app: &mut SlideApp, ui: &Ui, resp: &egui::Response, xf: Xf) -
     }
     let map = slide_map(xf, &doc);
     let pos = resp.interact_pointer_pos().or(resp.hover_pos());
-    let stop = ui.input(|i| i.key_pressed(egui::Key::Escape))
-        || (ui.input(|i| i.pointer.primary_pressed()) && pos.is_some_and(|q| !map.srect.contains(q)));
+    let stop =
+        ui.input(|i| i.key_pressed(egui::Key::Escape)) || (ui.input(|i| i.pointer.primary_pressed()) && pos.is_some_and(|q| !map.srect.contains(q)));
     if stop {
         app.set_status("");
         ui.ctx().request_repaint();

@@ -23,7 +23,9 @@ const MAX_ZIP_TOTAL: u64 = 256 << 20;
 const MAX_ZIP_FONTS: usize = 400;
 
 pub fn specs() -> Vec<CommandSpec> {
-    vec![cmd!(noundo "font.install", "Add Fonts", ["Home", "Font"], None, "{paths: [file], dir?} → {installed: [{family, styles, file}], skipped: [name]} (copies fonts into the user fonts folder)", always, install)]
+    vec![
+        cmd!(noundo "font.install", "Add Fonts", ["Home", "Font"], None, "{paths: [file], dir?} → {installed: [{family, styles, file}], skipped: [name]} (copies fonts into the user fonts folder)", always, install),
+    ]
 }
 
 fn is_font_name(name: &str) -> bool {
@@ -148,7 +150,10 @@ fn install(_s: &mut Session, p: &Value) -> Result<Value> {
         installed.push(json!({"family": family, "styles": styles, "file": file.to_string_lossy()}));
     }
     if installed.is_empty() {
-        return Err(bad("font.install", if paths.len() == 1 { "that file has no font deckrt can read" } else { "none of those files has a font deckrt can read" }));
+        return Err(bad(
+            "font.install",
+            if paths.len() == 1 { "that file has no font deckrt can read" } else { "none of those files has a font deckrt can read" },
+        ));
     }
     Ok(json!({"installed": installed, "skipped": skipped}))
 }
@@ -166,7 +171,10 @@ mod tests {
     }
 
     fn a_font() -> Vec<u8> {
-        deckcraft_fonts::bundled().first().map(|b| b.to_vec()).unwrap_or_else(|| deckcraft_fonts::FontDb::global().face("Arial", "Regular").data().to_vec())
+        deckcraft_fonts::bundled()
+            .first()
+            .map(|b| b.to_vec())
+            .unwrap_or_else(|| deckcraft_fonts::FontDb::global().face("Arial", "Regular").data().to_vec())
     }
 
     #[test]

@@ -42,7 +42,10 @@ pub fn live_row(
         let r = ui.add(egui::Slider::new(&mut v, range.clone()).show_value(false).trailing_fill(true));
         changed |= live(app, &r, label, v, value, cmd, &param);
         let mut n = v;
-        let d = ui.add_sized(vec2(62.0, 20.0), egui::DragValue::new(&mut n).update_while_editing(false).range(range).suffix(suffix).speed(0.5).max_decimals(0));
+        let d = ui.add_sized(
+            vec2(62.0, 20.0),
+            egui::DragValue::new(&mut n).update_while_editing(false).range(range).suffix(suffix).speed(0.5).max_decimals(0),
+        );
         changed |= live(app, &d, label, n, value, cmd, &param);
     });
     changed

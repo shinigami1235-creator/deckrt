@@ -180,11 +180,8 @@ pub fn draw(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf: Xf) {
         let m = deckcraft_anim::morph_frame(&doc, a, b, progress, &hidden_b);
         let f = |id: ShapeId| ShapeState { opacity: m.opacity_of(id), ..Default::default() };
         let opts = RenderOpts { scale, size: Some(size), state: Some(&f), threads, ..Default::default() };
-        let text: Vec<deckcraft_render::TextMorph> = m
-            .text
-            .iter()
-            .map(|x| deckcraft_render::TextMorph { old: x.old, new: x.new, from: x.from, to: x.to, chars: x.chars, t: m.mix })
-            .collect();
+        let text: Vec<deckcraft_render::TextMorph> =
+            m.text.iter().map(|x| deckcraft_render::TextMorph { old: x.old, new: x.new, from: x.from, to: x.to, chars: x.chars, t: m.mix }).collect();
         let paths: Vec<deckcraft_render::PathMorph> = m
             .paths
             .iter()
@@ -376,7 +373,9 @@ pub fn effect_gallery(app: &mut SlideApp, ui: &mut Ui, cmd: &str) {
     let room = (ui.ctx().content_rect().height() - 220.0).clamp(240.0, 640.0);
     let mut picked = None;
     egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
-        for (cls, label) in [(AnimClass::Entrance, "Entrance"), (AnimClass::Emphasis, "Emphasis"), (AnimClass::Exit, "Exit"), (AnimClass::Path, "Motion Paths")] {
+        for (cls, label) in
+            [(AnimClass::Entrance, "Entrance"), (AnimClass::Emphasis, "Emphasis"), (AnimClass::Exit, "Exit"), (AnimClass::Path, "Motion Paths")]
+        {
             ui.label(egui::RichText::new(label).font(crate::theme::bold(12.0)));
             ui.horizontal_wrapped(|ui| {
                 for a in deckcraft_model::anim::ANIMATIONS.iter().filter(|a| a.2 == cls) {
@@ -450,7 +449,12 @@ pub fn pane_row_name(app: &SlideApp, shape: ShapeId, name: String) -> String {
     let text = app
         .session
         .active()
-        .and_then(|d| d.shapes().iter().find(|s| s.id == shape).and_then(|s| s.text.as_ref().map(|t| t.paragraphs.iter().map(|p| p.text()).find(|l| !l.trim().is_empty()))))
+        .and_then(|d| {
+            d.shapes()
+                .iter()
+                .find(|s| s.id == shape)
+                .and_then(|s| s.text.as_ref().map(|t| t.paragraphs.iter().map(|p| p.text()).find(|l| !l.trim().is_empty())))
+        })
         .flatten()
         .unwrap_or_default();
     let text = text.trim();

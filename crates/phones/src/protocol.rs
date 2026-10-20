@@ -524,7 +524,10 @@ mod tests {
 
     #[test]
     fn typed_answers_rankings_and_questions_parse_within_limits() {
-        assert_eq!(parse_phone(r#"{"t":"text","poll":"12","text":"collagen, elastin"}"#), Some(PhoneMessage::Text { poll: "12".into(), text: "collagen, elastin".into() }));
+        assert_eq!(
+            parse_phone(r#"{"t":"text","poll":"12","text":"collagen, elastin"}"#),
+            Some(PhoneMessage::Text { poll: "12".into(), text: "collagen, elastin".into() })
+        );
         assert_eq!(parse_phone(r#"{"t":"rank","poll":"12","order":[2,0,1]}"#), Some(PhoneMessage::Rank { poll: "12".into(), order: vec![2, 0, 1] }));
         assert_eq!(parse_phone(r#"{"t":"ask","text":"Why?"}"#), Some(PhoneMessage::Ask { text: "Why?".into(), anon: false }));
         assert_eq!(parse_phone(r#"{"t":"upvote","q":"q3"}"#), Some(PhoneMessage::Upvote { q: "q3".into(), on: true }));

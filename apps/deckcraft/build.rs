@@ -25,8 +25,7 @@ fn main() {
     // installer always sees the newer exe as newer and Explorer's Details tab tells builds apart.
     let (major, minor, patch, build) = file_version();
     let dotted = format!("{major}.{minor}.{patch}.{build}");
-    res.set_version_info(winresource::VersionInfo::FILEVERSION, (major << 48) | (minor << 32) | (patch << 16) | build)
-        .set("FileVersion", &dotted);
+    res.set_version_info(winresource::VersionInfo::FILEVERSION, (major << 48) | (minor << 32) | (patch << 16) | build).set("FileVersion", &dotted);
     if let Err(e) = res.compile() {
         if std::env::var_os("DECKCRAFT_REQUIRE_WINRES").is_some() {
             eprintln!("embedding Windows resources failed: {e}");

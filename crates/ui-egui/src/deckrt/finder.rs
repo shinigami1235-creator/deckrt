@@ -195,7 +195,11 @@ fn read_deck(path: &Path, thumbs: &Path) -> Result<Vec<SlideEntry>, String> {
     let mut out = vec![];
     for (i, sl) in pres.slides.iter().enumerate() {
         out.push(slide_entry(sl));
-        let img = deckcraft_render::render_slide(&pres, i, &deckcraft_render::RenderOpts { scale: w as f64 / sw, size: Some((w, h)), ..Default::default() });
+        let img = deckcraft_render::render_slide(
+            &pres,
+            i,
+            &deckcraft_render::RenderOpts { scale: w as f64 / sw, size: Some((w, h)), ..Default::default() },
+        );
         let rgba = img.to_straight();
         if let Some(buf) = image::RgbaImage::from_raw(img.width, img.height, rgba) {
             let rgb = image::DynamicImage::ImageRgba8(buf).to_rgb8();
@@ -344,10 +348,8 @@ impl Finder {
             return;
         }
         self.loaded = true;
-        let mut saved: Saved = settings
-            .and_then(|d| std::fs::read_to_string(d.join(INDEX_FILE)).ok())
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let mut saved: Saved =
+            settings.and_then(|d| std::fs::read_to_string(d.join(INDEX_FILE)).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         if saved.folders.is_empty() {
             saved.folders = default_folders();
             if let Some(d) = deck_dir
@@ -406,7 +408,8 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         ui.label("Find a Slide needs the desktop app.");
     }
 
-    let r = ui.add(egui::TextEdit::singleline(&mut f.query).hint_text("Search your slides: collagen, HA filler, case 3").desired_width(f32::INFINITY));
+    let r =
+        ui.add(egui::TextEdit::singleline(&mut f.query).hint_text("Search your slides: collagen, HA filler, case 3").desired_width(f32::INFINITY));
     if f.focus {
         r.request_focus();
         f.focus = false;
@@ -429,7 +432,8 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         ui.label(RichText::new("Looking in").color(Color32::from_gray(130)));
         for (i, p) in folders.iter().enumerate() {
             let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.display().to_string());
-            if ui.add(egui::Button::new(format!("{name}  ×")).small()).on_hover_text(format!("{}\nClick to stop looking here", p.display())).clicked() {
+            if ui.add(egui::Button::new(format!("{name}  ×")).small()).on_hover_text(format!("{}\nClick to stop looking here", p.display())).clicked()
+            {
                 remove = Some(i);
             }
         }
@@ -465,9 +469,7 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         lock(&f.shared).saved.folders.remove(i);
         changed_folders = true;
     }
-    if add
-        && let Some(p) = app.services.pick_open.as_mut().and_then(|pick| pick("folder"))
-    {
+    if add && let Some(p) = app.services.pick_open.as_mut().and_then(|pick| pick("folder")) {
         let p = PathBuf::from(p);
         let f = &mut app.deckrt.finder;
         let mut s = lock(&f.shared);
@@ -663,7 +665,14 @@ mod tests {
         let mut decks = BTreeMap::new();
         decks.insert(
             "a.pptx".to_string(),
-            deck(10, &[("Collagen in the dermis", "Type I and III", ""), ("Fillers", "HA filler and collagen stimulators", ""), ("Case 3", "", "HA filler, 1 ml")]),
+            deck(
+                10,
+                &[
+                    ("Collagen in the dermis", "Type I and III", ""),
+                    ("Fillers", "HA filler and collagen stimulators", ""),
+                    ("Case 3", "", "HA filler, 1 ml"),
+                ],
+            ),
         );
         decks.insert("b.pptx".to_string(), deck(20, &[("HA filler basics", "Cross-linked hyaluronic acid", "")]));
         let h = search(&decks, "ha filler", None);

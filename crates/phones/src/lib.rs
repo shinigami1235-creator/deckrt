@@ -159,8 +159,9 @@ impl PhoneServer {
     pub fn stop(mut self) {
         // deckrt: a last message to the phones ("ended") needs a moment to leave before the
         // connections close with the server.
+        // A plain sleep: the server's runtime has no timer of its own to wait on.
         if self.hub.connected() > 0 {
-            self.rt.block_on(tokio::time::sleep(std::time::Duration::from_millis(250)));
+            std::thread::sleep(std::time::Duration::from_millis(250));
         }
         self.hub.presenter_detach(self.serial);
         if let Some(r) = self.running.take() {
@@ -192,5 +193,27 @@ mod tests {
         let answer = s.self_test(&url).expect("page");
         assert!(answer.contains("answers at 127.0.0.1"), "{answer}");
         s.stop();
+    }
+
+    #[test]
+    fn stopping_with_a_phone_connected_does_not_panic() {
+        use futures_util::{SinkExt, StreamExt};
+        let mut s = PhoneServer::start(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)], 0).expect("starts");
+        let url = format!("ws://127.0.0.1:{}/ws?role=phone&t={}&id=stop-test-phone-01", s.port(), s.token());
+        let side = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime");
+        let mut ws = side.block_on(async {
+            let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.expect("connect");
+            ws.send(tokio_tungstenite::tungstenite::Message::Text(r#"{"t":"join","name":"Sam"}"#.into())).await.expect("join");
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), ws.next()).await;
+            ws
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while s.connected() == 0 && std::time::Instant::now() < deadline {
+            let _ = s.poll();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(s.connected() > 0, "the phone joined");
+        s.stop();
+        let _ = side.block_on(ws.close(None));
     }
 }

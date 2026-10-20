@@ -5,6 +5,15 @@ pub mod arrange;
 pub mod artistic;
 pub mod background;
 pub mod compress;
+pub mod deckrt_check; // deckrt: the check before a talk
+pub mod deckrt_coach; // deckrt: the pace kept from a rehearsal
+pub mod deckrt_fonts; // deckrt: Add Fonts // deckrt: PowerPoint's twenty WordArt styles
+pub mod deckrt_live; // deckrt: live sliders, one undo step a drag
+pub mod deckrt_privacy; // deckrt: the check before sharing
+pub mod deckrt_record; // deckrt: recorded narration
+pub mod deckrt_sample; // deckrt: the sample deck that comes with the program
+pub mod deckrt_tidy; // deckrt: Tidy This Slide
+pub mod deckrt_wordart;
 pub mod design;
 pub mod edit;
 pub mod file;
@@ -15,15 +24,6 @@ pub mod insert;
 pub mod inspect;
 /// deckrt hook: the interactive objects' commands.
 pub mod interactive;
-pub mod deckrt_check; // deckrt: the check before a talk
-pub mod deckrt_privacy; // deckrt: the check before sharing
-pub mod deckrt_coach; // deckrt: the pace kept from a rehearsal
-pub mod deckrt_wordart;
-pub mod deckrt_fonts; // deckrt: Add Fonts // deckrt: PowerPoint's twenty WordArt styles
-pub mod deckrt_record; // deckrt: recorded narration
-pub mod deckrt_tidy; // deckrt: Tidy This Slide
-pub mod deckrt_live; // deckrt: live sliders, one undo step a drag
-pub mod deckrt_sample; // deckrt: the sample deck that comes with the program
 pub mod media;
 pub mod merge;
 pub mod picture_style;

@@ -140,7 +140,8 @@ pub struct Phones {
     live_version: u32,
     live_key: String,
     live_sent_at: f64,
-    live_rx: Option<Receiver<Option<Vec<u8>>>>,
+    /// A live frame being made, for the slide (0-based) it shows.
+    live_rx: Option<(usize, Receiver<Option<Vec<u8>>>)>,
     live_current: Option<(usize, u32)>,
     /// Latency samples: phone's `at` to applied, milliseconds.
     pub inputs: Vec<f64>,
@@ -174,7 +175,8 @@ impl Phones {
         // Listen on the room's private addresses, and on a public one only when it is the one the
         // QR code shows (a network that hands out public addresses), never on every address the
         // laptop has.
-        let ips: Vec<std::net::IpAddr> = addresses.iter().filter(|a| a.private || a.address == chosen).filter_map(|a| a.address.parse().ok()).collect();
+        let ips: Vec<std::net::IpAddr> =
+            addresses.iter().filter(|a| a.private || a.address == chosen).filter_map(|a| a.address.parse().ok()).collect();
         let (server, status, url) = match deckcraft_phones::PhoneServer::start_with_token(ips, PORT, token) {
             Ok(s) => {
                 let url = s.url_for(&chosen);
@@ -280,18 +282,33 @@ impl Phones {
                 std::fs::create_dir_all(&out).map_err(|e| format!("cannot make {}: {e}", out.display()))?;
                 let h = (PHONE_WIDTH as f64 * doc.slide_size.height / doc.slide_size.width.max(1.0)).round().clamp(1.0, 4096.0) as u32;
                 for i in 0..doc.slides.len() {
-                    // Objects drawn as the file shows them (a poll's question and answers),
-                    // since these pictures are what phones look back at and print.
+                    // The slide as the show opens it: a swap, a scrub and a wipe show their first
+                    // picture (not every picture stacked), and a poll is left out until the
+                    // presenter opens it. These pictures are what phones look back at.
+                    let skip: Vec<deckcraft_model::ShapeId> = super::show::hidden_in_show(&doc, i)
+                        .into_iter()
+                        .filter(|id| objects_on(&doc, i).iter().any(|it| it.id == id.0 && it.obj.kind() != deckcraft_interactive::Kind::Model))
+                        .collect();
                     let img = deckcraft_render::render_slide(
                         &doc,
                         i,
                         &deckcraft_render::RenderOpts {
                             scale: PHONE_WIDTH as f64 / doc.slide_size.width.max(1.0),
                             size: Some((PHONE_WIDTH, h)),
+                            skip: &skip,
                             ..Default::default()
                         },
                     );
-                    let jpeg = jpeg_of(img.width, img.height, &img.pixels)?;
+                    let mut layers = vec![];
+                    for it in objects_on(&doc, i) {
+                        layers.extend(picture_layers(&doc, &it, &ObjectState::initial(&it.obj).st));
+                    }
+                    let canvas = image::RgbaImage::from_raw(img.width, img.height, img.pixels).ok_or("bad picture size")?;
+                    // Without the objects' pictures too: what a live frame draws them over.
+                    let bare = jpeg_of(canvas.width(), canvas.height(), canvas.as_raw())?;
+                    std::fs::write(out.join(format!("bare-{:03}.jpg", i + 1)), bare).map_err(|e| e.to_string())?;
+                    let canvas = draw_layers(canvas, layers);
+                    let jpeg = jpeg_of(canvas.width(), canvas.height(), canvas.as_raw())?;
                     std::fs::write(out.join(format!("slide-{:03}.jpg", i + 1)), jpeg).map_err(|e| e.to_string())?;
                 }
                 Ok(doc.slides.len() as u32)
@@ -335,11 +352,14 @@ impl Phones {
             redraw = true;
         }
         // A live frame that finished encoding.
-        if let Some(rx) = &self.live_rx
+        if let Some((for_slide, rx)) = &self.live_rx
             && let Ok(frame) = rx.try_recv()
         {
+            let for_slide = *for_slide;
             self.live_rx = None;
-            if let Some(jpeg) = frame
+            // A frame of a slide the show has left since is dropped.
+            if for_slide == idx
+                && let Some(jpeg) = frame
                 && let Some(s) = &self.server
             {
                 self.live_version = self.live_version.wrapping_add(1);
@@ -406,7 +426,8 @@ impl Phones {
                         if (option as usize) >= limit {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes, .. }, .. }) = ext_states.get_mut(&p.key()) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, votes, .. }, .. }) = ext_states.get_mut(&p.key())
+                        {
                             votes.insert(id.clone(), option as usize);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -511,7 +532,8 @@ impl Phones {
                         if words.is_empty() {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, texts, .. }, .. }) = ext_states.get_mut(&p.key()) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, texts, .. }, .. }) = ext_states.get_mut(&p.key())
+                        {
                             texts.insert(id.clone(), words);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -529,7 +551,8 @@ impl Phones {
                         if order.is_empty() {
                             continue;
                         }
-                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, ranks, .. }, .. }) = ext_states.get_mut(&p.key()) {
+                        if let Some(ObjectState { st: TypeState::Poll { open: true, revealed: false, ranks, .. }, .. }) = ext_states.get_mut(&p.key())
+                        {
                             ranks.insert(id.clone(), order);
                             *changed_at = now;
                             self.results_due = Some(now + 1.5);
@@ -646,6 +669,10 @@ impl Phones {
                 Some(ObjectState { st: TypeState::Poll { votes, texts, ranks, .. }, .. }) => poll::answered(votes, texts, ranks),
                 _ => 0,
             };
+            // Phones see a poll once the presenter opens it, not before.
+            if !open && !revealed && answered == 0 {
+                return None;
+            }
             Some(json!({
                 "id": p.id.to_string(),
                 "kind": c.kind.id(),
@@ -925,45 +952,44 @@ impl Phones {
                         layers.push(Layer::Model { rect: r, model, view, hidden });
                     }
                 }
-                (TypeState::Swap { index, .. }, Config::ImageSwap(c), _) => {
-                    if let Some(m) = c.images.get(*index).or(c.images.first())
-                        && let Some(img) = super::pictures::Pictures::decode(doc, m.0)
-                    {
-                        layers.push(Layer::Picture { rect: r, img, cover: false });
-                    }
-                }
-                (TypeState::Scrub { index }, Config::Scrub(c), _) => {
-                    if let Some(m) = c.images.get(*index).or(c.images.first())
-                        && let Some(img) = super::pictures::Pictures::decode(doc, m.0)
-                    {
-                        layers.push(Layer::Picture { rect: r, img, cover: false });
-                    }
-                }
-                (TypeState::Wipe { position }, Config::Wipe(c), _) => {
-                    if let (Some(before), Some(after)) =
-                        (super::pictures::Pictures::decode(doc, c.before.0), super::pictures::Pictures::decode(doc, c.after.0))
-                    {
-                        layers.push(Layer::Picture { rect: r, img: after, cover: true });
-                        let cut = [r[0], r[1], r[2] * *position, r[3]];
-                        layers.push(Layer::Clipped { rect: r, clip: cut, img: before });
-                    }
-                }
-                _ => {}
+                (st, _, _) => layers.extend(picture_layers(doc, it, st)),
             }
         }
         for s in &ext.ink {
             let [r, g, b, _] = s.color.to_array();
             layers.push(Layer::Ink { color: [r, g, b], points: s.points.iter().map(|p| [p[0] as f64, p[1] as f64]).collect() });
         }
-        let base = self.slides.as_ref().map(|s| s.dir.join(format!("slide-{:03}.jpg", idx + 1)));
+        let base = self.slides.as_ref().map(|s| s.dir.join(format!("bare-{:03}.jpg", idx + 1)));
         let (tx, rx) = channel();
         let aspect = doc.slide_size.width / doc.slide_size.height.max(1.0);
         let spawned = std::thread::Builder::new().name("deckrt-live-frame".into()).spawn(move || {
             let _ = tx.send(compose(base, aspect, layers));
         });
         if spawned.is_ok() {
-            self.live_rx = Some(rx);
+            self.live_rx = Some((idx, rx));
             self.live_key = key;
+            self.live_sent_at = now;
+        }
+    }
+
+    /// Whether a live frame is wanted now: phones are connected and none is being made.
+    pub fn wants_frame(&self) -> bool {
+        self.server.is_some() && self.connected() > 0 && self.live_rx.is_none()
+    }
+
+    /// A copy of the slide as the audience screen draws it: it goes to the phones as the live
+    /// picture of slide `idx` (0-based), encoded on another thread.
+    pub fn frame_image(&mut self, img: image::RgbaImage, idx: usize, now: f64) {
+        if self.live_rx.is_some() {
+            return;
+        }
+        let (tx, rx) = channel();
+        let spawned = std::thread::Builder::new().name("deckrt-screen-frame".into()).spawn(move || {
+            let _ = tx.send(jpeg_of(img.width(), img.height(), img.as_raw()).ok());
+        });
+        if spawned.is_ok() {
+            self.live_rx = Some((idx, rx));
+            self.live_key.clear();
             self.live_sent_at = now;
         }
     }
@@ -1037,10 +1063,55 @@ fn jpeg_of(w: u32, h: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
 fn compose(base: Option<PathBuf>, aspect: f64, layers: Vec<Layer>) -> Option<Vec<u8>> {
     let w = PHONE_WIDTH;
     let h = (w as f64 / aspect.max(0.1)).round().clamp(1.0, 4096.0) as u32;
-    let mut canvas = match base.and_then(|p| std::fs::read(p).ok()).and_then(|b| image::load_from_memory(&b).ok()) {
+    let canvas = match base.and_then(|p| std::fs::read(p).ok()).and_then(|b| image::load_from_memory(&b).ok()) {
         Some(b) => image::imageops::resize(&b.to_rgba8(), w, h, image::imageops::FilterType::Triangle),
         None => image::RgbaImage::from_pixel(w, h, image::Rgba([255, 255, 255, 255])),
     };
+    let canvas = draw_layers(canvas, layers);
+    jpeg_of(canvas.width(), canvas.height(), canvas.as_raw()).ok()
+}
+
+/// The pictures an object shows in state `st`: a swap's or a scrub's current picture, a wipe's
+/// two. Other objects draw nothing here.
+fn picture_layers(doc: &Presentation, it: &Item, st: &TypeState) -> Vec<Layer> {
+    let r = [
+        it.xfrm.x / doc.slide_size.width.max(1.0),
+        it.xfrm.y / doc.slide_size.height.max(1.0),
+        it.xfrm.w / doc.slide_size.width.max(1.0),
+        it.xfrm.h / doc.slide_size.height.max(1.0),
+    ];
+    let pic = |m: deckcraft_model::MediaId| super::pictures::Pictures::decode(doc, m);
+    match (st, &it.obj.config) {
+        (TypeState::Swap { index, .. }, Config::ImageSwap(c)) => c
+            .images
+            .get(*index)
+            .or(c.images.first())
+            .and_then(|m| pic(m.0))
+            .map(|img| Layer::Picture { rect: r, img, cover: false })
+            .into_iter()
+            .collect(),
+        (TypeState::Scrub { index }, Config::Scrub(c)) => c
+            .images
+            .get(*index)
+            .or(c.images.first())
+            .and_then(|m| pic(m.0))
+            .map(|img| Layer::Picture { rect: r, img, cover: false })
+            .into_iter()
+            .collect(),
+        (TypeState::Wipe { position }, Config::Wipe(c)) => match (pic(c.before.0), pic(c.after.0)) {
+            (Some(before), Some(after)) => {
+                let cut = [r[0], r[1], r[2] * *position, r[3]];
+                vec![Layer::Picture { rect: r, img: after, cover: true }, Layer::Clipped { rect: r, clip: cut, img: before }]
+            }
+            _ => vec![],
+        },
+        _ => vec![],
+    }
+}
+
+/// `layers` drawn over `canvas`, in order.
+fn draw_layers(mut canvas: image::RgbaImage, layers: Vec<Layer>) -> image::RgbaImage {
+    let (w, h) = (canvas.width(), canvas.height());
     let px = |r: [f64; 4]| -> (i64, i64, u32, u32) {
         (
             (r[0] * w as f64).round() as i64,
@@ -1069,18 +1140,18 @@ fn compose(base: Option<PathBuf>, aspect: f64, layers: Vec<Layer>) -> Option<Vec
             Layer::Clipped { rect, clip, img } => {
                 let (x, y, bw, bh) = px(rect);
                 let fitted = fit(&img, bw, bh, true);
-                let (cx, cy, cw, ch) = px(clip);
+                let (_, _, cw, ch) = px(clip);
                 let cw = cw.min(fitted.width());
                 let ch = ch.min(fitted.height());
                 if cw > 0 && ch > 0 {
                     let sub = image::imageops::crop_imm(&fitted, 0, 0, cw, ch).to_image();
-                    let _ = (cx, cy, bw, bh);
+                    let _ = (bw, bh);
                     image::imageops::overlay(&mut canvas, &sub, x, y);
                 }
             }
         }
     }
-    jpeg_of(w, h, canvas.as_raw()).ok()
+    canvas
 }
 
 /// A picture scaled into `bw` × `bh`: fitted inside (`contain`) or filling and cropped (`cover`).

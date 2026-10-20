@@ -72,6 +72,9 @@ mod tests {
         );
         assert_eq!(plain_error("This slide has no transition."), "This slide has no transition.");
         assert_eq!(plain_error("invalid parameters for `x`: the `id` is wrong (see docs)"), "The id is wrong.");
-        assert_eq!(plain_error("invalid parameters for `animation.painter`: shape 363 has no animations to copy"), "This object has no animations to copy.");
+        assert_eq!(
+            plain_error("invalid parameters for `animation.painter`: shape 363 has no animations to copy"),
+            "This object has no animations to copy."
+        );
     }
 }

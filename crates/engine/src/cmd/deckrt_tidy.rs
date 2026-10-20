@@ -167,10 +167,7 @@ pub fn tidy_slide(doc: &Presentation, index: usize) -> Option<(Slide, Vec<String
         sl.shapes.iter().enumerate().filter(|(_, s)| movable(s) && !is_caption(s)).filter_map(|(i, s)| s.xfrm.map(|x| (i, x))).collect();
     let mut items = shapes;
     let mut did: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
-    for (horizontal, groups) in [
-        (true, bands(&items, |x| x.y + x.h / 2.0, |x| x.h)),
-        (false, bands(&items, |x| x.x + x.w / 2.0, |x| x.w)),
-    ] {
+    for (horizontal, groups) in [(true, bands(&items, |x| x.y + x.h / 2.0, |x| x.h)), (false, bands(&items, |x| x.x + x.w / 2.0, |x| x.w))] {
         for g in groups {
             for what in arrange(&mut items, &g, horizontal) {
                 *did.entry(what).or_default() += g.len();
@@ -222,8 +219,7 @@ pub fn tidy_slide(doc: &Presentation, index: usize) -> Option<(Slide, Vec<String
     }
 
     // Tiny text comes up: a caption to its fellow captions' size, anything else to 12 pt.
-    let fellow: Vec<f64> =
-        sl.shapes.iter().filter(|s| caption_ids.contains(&s.id)).flat_map(sizes).filter(|v| *v >= SMALL_TEXT).collect();
+    let fellow: Vec<f64> = sl.shapes.iter().filter(|s| caption_ids.contains(&s.id)).flat_map(sizes).filter(|v| *v >= SMALL_TEXT).collect();
     let caption_size = if fellow.is_empty() { SMALL_TEXT } else { median(fellow) };
     {
         let mut raised = 0;

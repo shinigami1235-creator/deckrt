@@ -174,7 +174,10 @@ fn media(doc: &Presentation, dir: Option<&std::path::Path>, out: &mut Out) {
                         "problem",
                         Some(i),
                         Some(sh.id.0),
-                        format!("The video \"{}\" opens but its first picture can't be decoded. Convert it to MP4 (H.264) and insert it again.", m.name),
+                        format!(
+                            "The video \"{}\" opens but its first picture can't be decoded. Convert it to MP4 (H.264) and insert it again.",
+                            m.name
+                        ),
                         None,
                     );
                     return;
@@ -185,7 +188,11 @@ fn media(doc: &Presentation, dir: Option<&std::path::Path>, out: &mut Out) {
                     "problem",
                     Some(i),
                     Some(sh.id.0),
-                    format!("The video \"{}\" will play without sound: its audio is {}. Convert it to MP4 with AAC audio.", m.name, info.audio.as_ref().map(|a| a.codec.as_str()).unwrap_or("")),
+                    format!(
+                        "The video \"{}\" will play without sound: its audio is {}. Convert it to MP4 with AAC audio.",
+                        m.name,
+                        info.audio.as_ref().map(|a| a.codec.as_str()).unwrap_or("")
+                    ),
                     None,
                 );
             }
@@ -202,7 +209,9 @@ fn fonts(doc: &Presentation, out: &mut Out) {
                 "note",
                 None,
                 None,
-                format!("{family} isn't on this computer, so its text shows in {sub}. Lines may break differently from the computer the deck was made on."),
+                format!(
+                    "{family} isn't on this computer, so its text shows in {sub}. Lines may break differently from the computer the deck was made on."
+                ),
                 Some(fix(&format!("Use {sub}"), vec![("font.replace", json!({"from": family, "to": sub}))])),
             ),
             None => out.push("note", None, None, format!("{family} isn't on this computer, so its text shows in a stand-in font."), None),
@@ -228,7 +237,13 @@ fn text_and_bounds(doc: &Presentation, out: &mut Out) {
                 let fully_out = inside_w <= 0.0 || inside_h <= 0.0;
                 let part_out = !fully_out && (inside_w < x.w - 2.0 || inside_h < x.h - 2.0);
                 if part_out && has_text {
-                    out.push("note", Some(i), Some(sh.id.0), format!("\"{}\" sits partly off the slide, so part of its text won't show.", shape_name(sh)), None);
+                    out.push(
+                        "note",
+                        Some(i),
+                        Some(sh.id.0),
+                        format!("\"{}\" sits partly off the slide, so part of its text won't show.", shape_name(sh)),
+                        None,
+                    );
                 }
             }
             if !has_text {
@@ -282,7 +297,13 @@ fn interactive(doc: &Presentation, out: &mut Out) {
                     if let ShapeKind::Model3d { media, .. } = sh.kind {
                         match doc.media(media) {
                             Some(m) if deckcraft_model3d::load(&m.data).is_ok() => {}
-                            _ => out.push("problem", Some(i), Some(sh.id.0), format!("The 3D model \"{name}\" has no readable model file. Use Replace file in its settings."), None),
+                            _ => out.push(
+                                "problem",
+                                Some(i),
+                                Some(sh.id.0),
+                                format!("The 3D model \"{name}\" has no readable model file. Use Replace file in its settings."),
+                                None,
+                            ),
                         }
                     }
                 }
@@ -308,7 +329,13 @@ fn interactive(doc: &Presentation, out: &mut Out) {
                         out.push("problem", Some(i), Some(sh.id.0), format!("The popup \"{name}\" is missing its picture."), None);
                     }
                     if let PopupContent::Web { url } = &c.content {
-                        out.push("note", Some(i), Some(sh.id.0), format!("The popup \"{name}\" opens {url}, which needs an internet connection at the venue."), None);
+                        out.push(
+                            "note",
+                            Some(i),
+                            Some(sh.id.0),
+                            format!("The popup \"{name}\" opens {url}, which needs an internet connection at the venue."),
+                            None,
+                        );
                     }
                 }
                 Config::Poll(c) => {
@@ -317,7 +344,13 @@ fn interactive(doc: &Presentation, out: &mut Out) {
                             && !keys.iter().any(|x| x == t)
                         {
                             let answer = c.options.get(k).cloned().unwrap_or_default();
-                            out.push("problem", Some(i), Some(sh.id.0), format!("In the poll \"{name}\", the answer \"{answer}\" leads to a slide that was deleted."), None);
+                            out.push(
+                                "problem",
+                                Some(i),
+                                Some(sh.id.0),
+                                format!("In the poll \"{name}\", the answer \"{answer}\" leads to a slide that was deleted."),
+                                None,
+                            );
                         }
                     }
                 }

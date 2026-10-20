@@ -66,7 +66,7 @@ fn title(id: &str) -> &'static str {
         "chartData" => "Chart Data",
         "trim" => "Trim Media",
         "smartart" => "Choose a SmartArt Graphic",
-        "chart" => "Insert Chart", // deckrt hook
+        "chart" => "Insert Chart",          // deckrt hook
         "chartType" => "Change Chart Type", // deckrt hook
         "bullets" => "Bullets and Numbering",
         "action" => "Action Settings",

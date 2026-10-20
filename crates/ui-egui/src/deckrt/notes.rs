@@ -69,11 +69,7 @@ fn divider(ui: &mut Ui, rect: Rect, id: &str, vertical: bool) -> Option<Pos2> {
         ui.ctx().set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
     }
     let c = rect.center();
-    let line = if vertical {
-        [pos2(c.x, rect.min.y), pos2(c.x, rect.max.y)]
-    } else {
-        [pos2(rect.min.x, c.y), pos2(rect.max.x, c.y)]
-    };
+    let line = if vertical { [pos2(c.x, rect.min.y), pos2(c.x, rect.max.y)] } else { [pos2(rect.min.x, c.y), pos2(rect.max.x, c.y)] };
     ui.painter().line_segment(line, Stroke::new(if lit { 3.0 } else { 1.0 }, Color32::from_gray(if lit { 150 } else { 70 })));
     if r.dragged() { r.interact_pointer_pos() } else { None }
 }
@@ -118,7 +114,8 @@ pub fn right_column(ui: &mut Ui, show: &mut Show, doc: &deckcraft_model::Present
         let share = show.ext.layout.next_share.clamp(*NEXT.start(), *NEXT.end());
         let area = Rect::from_min_size(pos2(right.min.x, y), vec2(right.width(), ((right.max.y - y) * share).max(40.0)));
         let aspect = (doc.slide_size.width / doc.slide_size.height.max(1.0)) as f32;
-        let (w, h) = if area.width() / area.height() > aspect { (area.height() * aspect, area.height()) } else { (area.width(), area.width() / aspect) };
+        let (w, h) =
+            if area.width() / area.height() > aspect { (area.height() * aspect, area.height()) } else { (area.width(), area.width() / aspect) };
         let nr = Rect::from_min_size(area.min, vec2(w, h));
         match next_tex {
             Some(t) => {

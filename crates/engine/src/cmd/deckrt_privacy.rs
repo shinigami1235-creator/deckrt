@@ -23,7 +23,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             privacy
         ),
-        cmd!("deckrt.applyCrops", "Delete Cropped Areas", [], None, "{ids?: [shape] (default: every cropped picture)} → {pictures}", has_doc, apply_crops),
+        cmd!(
+            "deckrt.applyCrops",
+            "Delete Cropped Areas",
+            [],
+            None,
+            "{ids?: [shape] (default: every cropped picture)} → {pictures}",
+            has_doc,
+            apply_crops
+        ),
         cmd!("deckrt.stripMetadata", "Remove Photo Details", [], None, "{} → {pictures}", has_doc, strip_metadata),
         cmd!("deckrt.removeNotes", "Remove All Speaker Notes", [], None, "{} → {slides}", has_doc, remove_notes),
         cmd!(
@@ -60,7 +68,6 @@ fn name_of(sh: &Shape) -> String {
     if sh.name.trim().is_empty() { format!("shape {}", sh.id) } else { sh.name.clone() }
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // Finding
 
@@ -71,7 +78,8 @@ pub fn patient_marks(text: &str) -> Vec<String> {
     // Lowercased one character at a time, so its byte offsets are the text's own (lowercasing
     // can change a character's length).
     let lower: String = text.chars().map(|c| c.to_lowercase().next().filter(|l| l.len_utf8() == c.len_utf8()).unwrap_or(c)).collect();
-    for key in ["hn", "mrn", "patient id", "hospital number", "dob", "date of birth", "เลขที่ผู้ป่วย", "เลขประจำตัว"] {
+    for key in ["hn", "mrn", "patient id", "hospital number", "dob", "date of birth", "เลขที่ผู้ป่วย", "เลขประจำตัว"]
+    {
         let mut from = 0;
         while let Some(i) = lower[from..].find(key) {
             let at = from + i;
@@ -219,7 +227,13 @@ fn privacy(s: &mut Session, _p: &Value) -> Result<Value> {
             // Patient numbers in the slide's text.
             if let Some(t) = &sh.text {
                 for m in patient_marks(&t.text()) {
-                    items.push(item("problem", Some(i), Some(sh.id.0), format!("\"{}\" holds what looks like a patient identifier: {m}", name_of(sh)), None));
+                    items.push(item(
+                        "problem",
+                        Some(i),
+                        Some(sh.id.0),
+                        format!("\"{}\" holds what looks like a patient identifier: {m}", name_of(sh)),
+                        None,
+                    ));
                 }
             }
         });
@@ -274,12 +288,22 @@ fn privacy(s: &mut Session, _p: &Value) -> Result<Value> {
             "problem",
             None,
             None,
-            format!("{n} picture{} still carr{} camera details: the date, the device and sometimes where it was taken.", if n == 1 { "" } else { "s" }, if n == 1 { "ies" } else { "y" }),
+            format!(
+                "{n} picture{} still carr{} camera details: the date, the device and sometimes where it was taken.",
+                if n == 1 { "" } else { "s" },
+                if n == 1 { "ies" } else { "y" }
+            ),
             Some(fix("Remove photo details", vec![("deckrt.stripMetadata", json!({}))])),
         ));
     }
     if cropped > 1 {
-        items.push(item("note", None, None, format!("{cropped} pictures are cropped."), Some(fix("Delete every cropped part", vec![("deckrt.applyCrops", json!({}))]))));
+        items.push(item(
+            "note",
+            None,
+            None,
+            format!("{cropped} pictures are cropped."),
+            Some(fix("Delete every cropped part", vec![("deckrt.applyCrops", json!({}))])),
+        ));
     }
     let with_notes: Vec<usize> = doc.slides.iter().enumerate().filter(|(_, s)| !s.notes.text().trim().is_empty()).map(|(i, _)| i + 1).collect();
     if !with_notes.is_empty() {
@@ -288,7 +312,11 @@ fn privacy(s: &mut Session, _p: &Value) -> Result<Value> {
             "note",
             None,
             None,
-            format!("Speaker notes go with the file (slide{} {list}{}).", if with_notes.len() == 1 { "" } else { "s" }, if with_notes.len() > 12 { " and more" } else { "" }),
+            format!(
+                "Speaker notes go with the file (slide{} {list}{}).",
+                if with_notes.len() == 1 { "" } else { "s" },
+                if with_notes.len() > 12 { " and more" } else { "" }
+            ),
             Some(fix("Remove all speaker notes", vec![("deckrt.removeNotes", json!({}))])),
         ));
     }
@@ -490,7 +518,8 @@ fn blur_area(s: &mut Session, p: &Value) -> Result<Value> {
         image::imageops::replace(&mut img, &soft, x0 as i64, y0 as i64);
         let original = m.data.clone();
         let name = format!("blurred-{}", m.name);
-        let (bytes, ct) = encode_like(&original, &image::DynamicImage::ImageRgba8(img)).ok_or_else(|| EngineError::Other("the picture can't be saved".into()))?;
+        let (bytes, ct) =
+            encode_like(&original, &image::DynamicImage::ImageRgba8(img)).ok_or_else(|| EngineError::Other("the picture can't be saved".into()))?;
         let new_id = doc.add_media(&name, ct, bytes).ok_or_else(|| EngineError::Other("no room for another picture".into()))?;
         if let Some(sh) = deckcraft_model::find_shape_mut(&mut Arc::make_mut(&mut doc.slides[slide]).shapes, id) {
             replace_picture(sh, media, new_id);
@@ -545,7 +574,8 @@ mod tests {
         let mut png = std::io::Cursor::new(vec![]);
         image::DynamicImage::ImageRgb8(img).write_to(&mut png, image::ImageFormat::Png).unwrap();
         let data = super::base64_encode(&png.into_inner());
-        let id = s.execute("insert.picture", &json!({"data": data, "name": "face.png", "rect": [100, 100, 200, 200]})).unwrap()["id"].as_u64().unwrap();
+        let id =
+            s.execute("insert.picture", &json!({"data": data, "name": "face.png", "rect": [100, 100, 200, 200]})).unwrap()["id"].as_u64().unwrap();
         s.execute("picture.crop", &json!({"left": 0.25, "ids": [id]})).unwrap();
         let r = s.execute("deckrt.privacy", &json!({})).unwrap();
         assert!(r["items"].as_array().unwrap().iter().any(|i| i["text"].as_str().unwrap().contains("cropped")), "{r}");

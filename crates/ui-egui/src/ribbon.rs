@@ -227,7 +227,10 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             return;
         }
         // The white card.
-        let card = Rect::from_min_max(pos2(rect.min.x + 8.0, rect.min.y + 30.0), pos2(rect.max.x - 8.0, rect.min.y + 30.0 + RIBBON_H + 10.0 + widgets::GROUP_LABEL_H));
+        let card = Rect::from_min_max(
+            pos2(rect.min.x + 8.0, rect.min.y + 30.0),
+            pos2(rect.max.x - 8.0, rect.min.y + 30.0 + RIBBON_H + 10.0 + widgets::GROUP_LABEL_H),
+        );
         ui.painter().rect_filled(card.translate(vec2(0.0, 1.0)), CornerRadius::same(10), t.card_border);
         ui.painter().rect_filled(card, CornerRadius::same(10), t.card);
         let inner = Rect::from_min_size(pos2(card.min.x + 10.0, card.min.y + 5.0), vec2(card.width() - 20.0, RIBBON_H));
@@ -532,7 +535,6 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                         run(app, "font.rescan", json!({}));
                         ui.close();
                     }
-
                 });
                 let size_text = size.map(|s| widgets::fmt_num(s, "")).unwrap_or_default();
                 dropdown(ui, "size", &size_text, 52.0, en, |ui| {
@@ -827,7 +829,9 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
                 // deckrt hook: only when the selection has text to turn into a diagram.
                 let has_text = app.session.active().is_some_and(|d| {
                     d.selection.text.is_some()
-                        || d.selected_shapes().iter().any(|sh| sh.text.as_ref().is_some_and(|t| t.paragraphs.iter().any(|p| !p.text().trim().is_empty())))
+                        || d.selected_shapes()
+                            .iter()
+                            .any(|sh| sh.text.as_ref().is_some_and(|t| t.paragraphs.iter().any(|p| !p.text().trim().is_empty())))
                 });
                 let r = icon_toggle(ui, Icon::SmartArt, "Convert to SmartArt", enabled(app, "smartArt.fromText") && has_text, false);
                 egui::Popup::menu(&r).show(|ui| smartart_gallery(app, ui, "smartArt.fromText", json!({}), "", "", "", None));
@@ -2646,7 +2650,9 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
         });
         let r = big_button(ui, Icon::Corrections, "Corrections", true);
         // deckrt hook: sliders with number boxes and a 5 by 5 grid of steps.
-        egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| crate::deckrt::format_picture::corrections_menu(app, ui));
+        egui::Popup::menu(&r)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| crate::deckrt::format_picture::corrections_menu(app, ui));
         let r = big_button(ui, Icon::ColorAdjust, "Color", true);
         egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             crate::deckrt::format_picture::color_sliders(app, ui); // deckrt hook
@@ -2698,7 +2704,9 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
         });
         let r = big_button(ui, Icon::Transparency, "Transparency", true);
         // deckrt hook: a slider with a number box above the steps.
-        egui::Popup::menu(&r).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| crate::deckrt::format_picture::transparency_menu(app, ui));
+        egui::Popup::menu(&r)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| crate::deckrt::format_picture::transparency_menu(app, ui));
         rows(ui, |ui| {
             small(app, ui, Icon::ChangePicture, "Change Picture", "app.changePictureDialog", json!({}));
             small(app, ui, Icon::ResetPicture, "Reset Picture", "picture.reset", json!({}));

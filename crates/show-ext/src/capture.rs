@@ -36,9 +36,9 @@ mod imp {
     };
     use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GWL_EXSTYLE, GetSystemMetrics, IsHungAppWindow, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-        SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
-        WS_EX_TOOLWINDOW,
+        EnumWindows, GWL_EXSTYLE, GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow,
+        IsIconic, IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetWindowDisplayAffinity,
+        WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WS_EX_TOOLWINDOW,
     };
     use windows::core::BOOL;
 

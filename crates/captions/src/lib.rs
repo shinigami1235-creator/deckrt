@@ -138,7 +138,11 @@ impl Download {
             }
             let _ = std::fs::remove_file(&self.part);
             let why = why.trim();
-            return Some(Err(if why.is_empty() { "The download failed. Check the internet connection.".into() } else { format!("The download failed: {why}") }));
+            return Some(Err(if why.is_empty() {
+                "The download failed. Check the internet connection.".into()
+            } else {
+                format!("The download failed: {why}")
+            }));
         }
         if !looks_like_model(&self.part) {
             let _ = std::fs::remove_file(&self.part);
@@ -193,7 +197,8 @@ pub fn clean_line(s: &str) -> String {
     }
     let t = out.split_whitespace().collect::<Vec<_>>().join(" ");
     let lower = t.to_lowercase();
-    const INVENTED: &[&str] = &["thank you.", "thanks for watching!", "thank you for watching.", "you", ".", "bye.", "subtitles by the amara.org community"];
+    const INVENTED: &[&str] =
+        &["thank you.", "thanks for watching!", "thank you for watching.", "you", ".", "bye.", "subtitles by the amara.org community"];
     if INVENTED.contains(&lower.as_str()) { String::new() } else { t }
 }
 

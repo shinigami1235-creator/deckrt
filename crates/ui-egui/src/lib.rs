@@ -598,7 +598,11 @@ impl SlideApp {
     pub fn set_status(&mut self, msg: impl Into<String>) {
         let msg: String = msg.into();
         // deckrt hook: an engine error reads as a sentence, without the command's id.
-        let msg = if msg.starts_with("command `") || msg.starts_with("invalid parameters for `") { crate::deckrt::messages::plain_error(&msg) } else { msg };
+        let msg = if msg.starts_with("command `") || msg.starts_with("invalid parameters for `") {
+            crate::deckrt::messages::plain_error(&msg)
+        } else {
+            msg
+        };
         self.status = Some((msg, now_ms()));
     }
 

@@ -50,6 +50,10 @@ pub enum Drag {
         id: u32,
         handle: usize,
     },
+    /// deckrt: drawing an injection map's arrow, from the point placed on the press.
+    Injection {
+        id: u32,
+    },
 }
 
 /// A stroke a phone drew on the slide, in slide units (0 to 1).
@@ -150,7 +154,41 @@ pub struct Ext {
     pub changed_at: f64,
     /// The phone server was started (or failed) for this show.
     pub phones_tried: bool,
+    /// Copies of the audience screen for the phones.
+    pub shots: ScreenShots,
 }
+
+/// deckrt: the phones see the slide as the audience screen draws it. When what it shows changes
+/// (an opened popup, a measurement, a picture swapped, a point placed), the show draws the slide
+/// a second time into a picture of its own and that goes to the phones. It doesn't depend on the
+/// audience window being on screen: on one display presenter view covers it. Without the GPU
+/// the phones get the older pictures composed from the objects' states.
+#[derive(Default)]
+pub struct ScreenShots {
+    /// What the slide shows, as text, and when it last changed.
+    sig: String,
+    sig_at: f64,
+    /// What the last copy showed, and when it was taken.
+    taken_sig: String,
+    taken_at: f64,
+    /// This frame's audience drawing is copied (set before the slide is drawn).
+    pub now: bool,
+    /// The copy is being drawn.
+    copying: bool,
+    /// The copy drawn last frame, rendered this frame (its textures are uploaded by then):
+    /// the shapes, where the slide was, and its slide.
+    pending: Option<(Vec<egui::epaint::ClippedShape>, Rect, usize)>,
+    /// `Some(false)`: the copy couldn't be rendered, at `failed_at`.
+    works: Option<bool>,
+    failed_at: f64,
+}
+
+/// How long what the slide shows must stay the same before it is copied, and how often a copy
+/// goes out while it keeps changing (a model turning).
+const SHOT_SETTLE: f64 = 0.35;
+const SHOT_EVERY: f64 = 1.0;
+/// Width of the copies, in pixels.
+const SHOT_WIDTH: f32 = 960.0;
 
 impl Default for Ext {
     fn default() -> Self {
@@ -193,6 +231,7 @@ impl Default for Ext {
             turning: vec![],
             changed_at: 0.0,
             phones_tried: false,
+            shots: ScreenShots::default(),
         }
     }
 }
@@ -608,6 +647,10 @@ pub fn draw(
                 }
             }
             (TypeState::Poll { open, revealed, votes, texts, ranks, hidden }, Config::Poll(c)) => {
+                // The phones' copy leaves a poll out until the presenter opens it.
+                if ext.shots.copying && !*open && !*revealed && poll::answered(votes, texts, ranks) == 0 {
+                    continue;
+                }
                 let answers = PollAnswers { votes, texts, ranks, hidden };
                 draw_poll(painter, rect, c, *open, *revealed, &answers, role, poll_bg(doc, idx));
             }
@@ -646,6 +689,10 @@ pub fn draw(
                     let prod = c.products.get(p.product);
                     let col = prod.map(|p| color32(&p.color)).unwrap_or(Color32::LIGHT_BLUE);
                     let r = size * 0.7;
+                    if let Some(to) = p.to {
+                        let end = pos2(rect.min.x + to[0] as f32 * rect.width(), rect.min.y + to[1] as f32 * rect.height());
+                        injection_arrow(painter, at, end, size * 0.22, col);
+                    }
                     painter.circle_filled(at, r + 1.5, Color32::from_black_alpha(140));
                     painter.circle_filled(at, r, col);
                     painter.text(at, Align2::CENTER_CENTER, format!("{}", i + 1), FontId::proportional(size * 0.8), Color32::WHITE);
@@ -744,7 +791,17 @@ fn poll_frame(painter: &egui::Painter, rect: Rect, question: &str, rows: f32, bg
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_typed(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, kind: PollKind, open: bool, revealed: bool, a: &PollAnswers, role: Role, bg: Color32) {
+fn draw_typed(
+    painter: &egui::Painter,
+    rect: Rect,
+    c: &obj::PollConfig,
+    kind: PollKind,
+    open: bool,
+    revealed: bool,
+    a: &PollAnswers,
+    role: Role,
+    bg: Color32,
+) {
     let painter = &painter.with_clip_rect(rect);
     let n = poll::answered(a.votes, a.texts, a.ranks);
     let (area, qsize) = poll_frame(painter, rect, &c.question, 5.0, bg);
@@ -927,7 +984,16 @@ fn draw_cloud(painter: &egui::Painter, area: Rect, words: &[(String, u32)], qsiz
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_choice(painter: &egui::Painter, rect: Rect, c: &obj::PollConfig, open: bool, revealed: bool, votes: &BTreeMap<String, usize>, role: Role, bg: Color32) {
+fn draw_choice(
+    painter: &egui::Painter,
+    rect: Rect,
+    c: &obj::PollConfig,
+    open: bool,
+    revealed: bool,
+    votes: &BTreeMap<String, usize>,
+    role: Role,
+    bg: Color32,
+) {
     let counts = poll::tally(c.options.len(), votes);
     let total: u32 = counts.iter().sum();
     let pct = poll::percentages(&counts);
@@ -1082,6 +1148,21 @@ pub(crate) fn pointer(
                     }
                 }
             }
+            Drag::Injection { id } => {
+                if let Some(it) = items.iter().find(|it| it.id == id) {
+                    let rect = map.rect(&it.xfrm);
+                    let to = [((p.x - rect.min.x) / rect.width().max(1.0)) as f64, ((p.y - rect.min.y) / rect.height().max(1.0)) as f64];
+                    if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&(idx, id))
+                        && let Some(last) = points.last_mut()
+                    {
+                        let end = injection::arrow_end([last.x, last.y], to);
+                        if end != last.to {
+                            last.to = end;
+                            ext.changed_at = now;
+                        }
+                    }
+                }
+            }
             Drag::Measure { id, handle } => {
                 if let Some(it) = items.iter().find(|it| it.id == id) {
                     let rect = map.rect(&it.xfrm);
@@ -1188,15 +1269,17 @@ pub(crate) fn pointer(
         }
         (Config::InjectionMap(_), Some(TypeState::InjectionMap { .. })) => {
             // Only the presenter places points: a point carries a product and a dose chosen in
-            // the presenter's row.
-            if role != Role::Presenter || !clicked {
+            // the presenter's row. The press places it; dragging on from there draws an arrow to
+            // where the product goes.
+            if role != Role::Presenter || !pressed {
                 return role == Role::Presenter;
             }
             let x = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
             let y = ((p.y - rect.min.y) / rect.height().max(1.0)).clamp(0.0, 1.0) as f64;
             if let Some(ObjectState { st: TypeState::InjectionMap { points, product, dose, .. }, .. }) = ext.states.get_mut(&it.key()) {
-                points.push(Point { x, y, product: *product, dose: *dose });
+                points.push(Point { x, y, product: *product, dose: *dose, to: None });
                 ext.changed_at = now;
+                ext.drag = Some(Drag::Injection { id: it.id });
             }
             true
         }
@@ -1614,7 +1697,16 @@ pub(crate) fn presenter_rows(
                     }
                     let mut d = *dose;
                     let unit = c.products.get(*product).map(|p| p.unit.as_str()).unwrap_or("");
-                    if ui.add(egui::DragValue::new(&mut d).update_while_editing(false).speed(0.1).range(0.0..=1000.0).max_decimals(2).suffix(format!(" {unit}"))).changed()
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut d)
+                                .update_while_editing(false)
+                                .speed(0.1)
+                                .range(0.0..=1000.0)
+                                .max_decimals(2)
+                                .suffix(format!(" {unit}")),
+                        )
+                        .changed()
                         && let Some(ObjectState { st: TypeState::InjectionMap { dose, .. }, .. }) = ext.states.get_mut(&it.key())
                     {
                         *dose = d;
@@ -1641,7 +1733,14 @@ pub(crate) fn presenter_rows(
                         *pinned = pin;
                     }
                     let line = injection::totals_line(c, points);
-                    dim(ui, if line.is_empty() { "No points yet. Click the slide picture to place one." } else { &line });
+                    dim(
+                        ui,
+                        if line.is_empty() {
+                            "No points yet. Click the slide picture for a point, or drag from where the needle goes in to the target for an arrow."
+                        } else {
+                            &line
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -1874,16 +1973,11 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
         show.ext.phones = Some(phones);
     }
     super::record::logic(show, ctx);
-    // The end of the show opens the feedback form on the phones, once.
-    if show.ended
-        && let Some(ph) = show.ext.phones.as_mut()
-        && !ph.crowd.auto_asked
+    // The end of the show opens the feedback form on the phones; going back closes it.
+    if let Some(ph) = show.ext.phones.as_mut()
+        && ph.crowd.follow_end(show.ended)
     {
-        ph.crowd.auto_asked = true;
-        if !ph.crowd.feedback_open {
-            ph.crowd.feedback_open = true;
-            ph.changed();
-        }
+        ph.changed();
     }
     super::coach::logic(app, show, ctx, doc, now);
     super::captions::logic(app, show, ctx, doc, now);
@@ -1900,13 +1994,78 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &Arc
         ctx.request_repaint();
     }
     if show.ext.phones.as_ref().is_some_and(|p| p.running()) {
-        let mut phones = show.ext.phones.take();
-        if let Some(ph) = phones.as_mut() {
-            ph.live_frame(&show.ext, doc, idx, &mut app.deckrt.models, now);
+        if !screen_frames(app, show, ctx, idx, now) {
+            let mut phones = show.ext.phones.take();
+            if let Some(ph) = phones.as_mut() {
+                ph.live_frame(&show.ext, doc, idx, &mut app.deckrt.models, now);
+            }
+            show.ext.phones = phones;
         }
-        show.ext.phones = phones;
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
+}
+
+/// Copy the slide for the phones when what it shows has changed (see [`ScreenShots`]): the copy
+/// drawn last frame is rendered and sent, and this frame's drawing is copied when it is due.
+/// Returns false when copies can't be rendered, so the caller composes the phones' picture.
+fn screen_frames(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, idx: usize, now: f64) -> bool {
+    let asked = std::mem::take(&mut show.ext.shots.now);
+    if let Some((shapes, rect, for_idx)) = show.ext.shots.pending.take() {
+        let ppp = SHOT_WIDTH / rect.width().max(1.0);
+        let size = [SHOT_WIDTH.round() as u32, (rect.height() * ppp).round().max(1.0) as u32];
+        let at = rect.min.to_vec2();
+        let shapes: Vec<egui::epaint::ClippedShape> = shapes
+            .into_iter()
+            .map(|mut c| {
+                c.shape.translate(-at);
+                c.clip_rect = c.clip_rect.translate(-at);
+                c
+            })
+            .collect();
+        match app.deckrt.gpu.as_ref().and_then(|g| g.paint_offscreen(ctx, shapes, size, ppp)) {
+            Some(img) => {
+                show.ext.shots.works = Some(true);
+                if let Some(ph) = show.ext.phones.as_mut() {
+                    ph.frame_image(img, for_idx, now);
+                }
+            }
+            None => {
+                show.ext.shots.works = Some(false);
+                show.ext.shots.failed_at = now;
+            }
+        }
+    } else if asked {
+        // The slide wasn't drawn after all (a transition began): try again.
+        show.ext.shots.taken_sig.clear();
+    }
+    // After a failure, the composed pictures for a while, then another try.
+    if show.ext.shots.works == Some(false) {
+        if now - show.ext.shots.failed_at < 15.0 {
+            return false;
+        }
+        show.ext.shots.works = None;
+    }
+    // Nothing copied while the screen is between states or not showing the slide.
+    let settled = !show.in_transition() && !show.state.playing && show.blank.is_none() && !show.grid && !show.ended && !show.reading;
+    if !settled || !show.ext.phones.as_ref().is_some_and(|p| p.wants_frame()) {
+        return true;
+    }
+    let ink: usize = show.ext.ink.iter().map(|s| s.points.len()).sum();
+    let pen: usize = show.strokes.iter().map(Vec::len).sum();
+    let states: Vec<String> = show.ext.states.range((idx, 0)..=(idx, u32::MAX)).map(|(k, v)| format!("{}:{:?}", k.1, v)).collect();
+    let sig =
+        format!("{idx}|{}|{}|{ink}|{}|{pen}|{:?}|{}", show.state.step, show.ext.ink.len(), show.strokes.len(), show.zoom_uv(), states.join(";"));
+    let shots = &mut show.ext.shots;
+    if sig != shots.sig {
+        shots.sig = sig;
+        shots.sig_at = now;
+    }
+    if shots.sig != shots.taken_sig && (now - shots.sig_at >= SHOT_SETTLE || now - shots.taken_at >= SHOT_EVERY) {
+        shots.taken_sig = shots.sig.clone();
+        shots.taken_at = now;
+        shots.now = true;
+    }
+    true
 }
 
 /// The audience screen's pointer, before the show acts on a click. Returns whether an object
@@ -1948,6 +2107,27 @@ pub fn audience_pointer(show: &mut Show, ctx: &egui::Context, srect: Rect, doc: 
 }
 
 /// The objects over the slide picture on the audience screen.
+/// An injection map's arrow from the insertion point `from` to the target `to`: a line with a
+/// filled head, outlined dark so it reads on skin and on a white slide.
+fn injection_arrow(painter: &egui::Painter, from: Pos2, to: Pos2, width: f32, col: Color32) {
+    let d = to - from;
+    let len = d.length();
+    if len < 1.0 {
+        return;
+    }
+    let dir = d / len;
+    let side = vec2(-dir.y, dir.x);
+    let head = (width * 4.5).min(len * 0.6);
+    let base = to - dir * head;
+    let tri = vec![to, base + side * head * 0.55, base - side * head * 0.55];
+    let shade = Color32::from_black_alpha(150);
+    painter.line_segment([from, base], Stroke::new(width + 2.5, shade));
+    painter.add(egui::Shape::convex_polygon(tri.clone(), shade, Stroke::new(2.5, shade)));
+    painter.line_segment([from, base + dir * 0.5], Stroke::new(width, col));
+    painter.add(egui::Shape::convex_polygon(tri, col, Stroke::NONE));
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn draw_audience(
     app: &mut SlideApp,
     show: &mut Show,
@@ -1956,10 +2136,31 @@ pub fn draw_audience(
     srect: Rect,
     doc: &Arc<Presentation>,
     now: f64,
+    slide: Option<egui::TextureId>,
 ) {
     let map = Map::new(srect, show.zoom_uv(), doc);
     let idx = show.state.slide;
     draw(ctx, painter, map, doc, idx, &mut show.ext, &mut app.deckrt, Role::Audience, now);
+    if show.ext.shots.now {
+        // The copy for the phones: the slide and its objects again, on a layer of its own that
+        // is taken off before the frame ends, so it never reaches the screen.
+        let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("deckrt-phone-copy"));
+        let copy = egui::Painter::new(ctx.clone(), layer, srect);
+        if let Some(t) = slide {
+            copy.image(t, srect, show.zoom_uv(), Color32::WHITE);
+        }
+        show.ext.shots.copying = true;
+        draw(ctx, &copy, map, doc, idx, &mut show.ext, &mut app.deckrt, Role::Audience, now);
+        show.ext.shots.copying = false;
+        let pen = crate::theme::to_color32(doc.show.pen_color);
+        for s in &show.strokes {
+            let pts: Vec<Pos2> = s.iter().map(|q| map.to_screen(q.x * map.sw, q.y * map.sh)).collect();
+            copy.add(egui::Shape::line(pts, Stroke::new(3.0, pen)));
+        }
+        let shapes: Vec<egui::epaint::ClippedShape> =
+            ctx.graphics_mut(|g| g.get_mut(layer).map(std::mem::take)).map(|l| l.all_entries().cloned().collect()).unwrap_or_default();
+        show.ext.shots.pending = Some((shapes, srect, idx));
+    }
 }
 
 /// Width of the QR column beside the slide, when the QR is shown to the audience.
@@ -2122,7 +2323,13 @@ mod tests {
         let doc = deckcraft_model::defaults::new_presentation(None);
         let ctx = egui::Context::default();
         let mut show = Show::new(&doc, 0, false, false);
-        let d = |index: usize| deckcraft_show_ext::DisplayInfo { index, origin: [index as i32 * 1920, 0], size_px: [1920, 1080], scale: 1.0, primary: index == 0 };
+        let d = |index: usize| deckcraft_show_ext::DisplayInfo {
+            index,
+            origin: [index as i32 * 1920, 0],
+            size_px: [1920, 1080],
+            scale: 1.0,
+            primary: index == 0,
+        };
         show.ext.displays = vec![d(0), d(1), d(2)];
         show.ext.audience = Some(2);
         show.ext.presenter_display = Some(0);
@@ -2262,6 +2469,49 @@ mod tests {
         assert!(pos.is_some_and(|p| (p - 0.25).abs() < 0.01), "{pos:?}");
     }
 
+    /// In presenter view a click on an injection map places a point and a drag from the
+    /// insertion point draws an arrow to the target.
+    #[test]
+    fn a_drag_on_the_injection_map_draws_an_arrow_and_a_click_a_point() {
+        let mut s = deckcraft_engine::Session::with_new();
+        s.execute("slide.new", &serde_json::json!({"layout": "blank"})).expect("slide");
+        s.execute("interactive.insert", &serde_json::json!({"kind": "injection_map", "rect": [0.0, 0.0, 960.0, 540.0]})).expect("insert");
+        let doc = std::sync::Arc::new(s.doc().expect("doc").doc.clone());
+        let it = objects_on(&doc, 1).pop().expect("the map");
+        let mut ext = Ext::default();
+        let mut zoom = None;
+        let ctx = egui::Context::default();
+        let map = Map::new(Rect::from_min_size(pos2(0.0, 0.0), vec2(960.0, 540.0)), unit(), &doc);
+        let r = map.rect(&it.xfrm);
+        let at = |fx: f32, fy: f32| pos2(r.min.x + fx * r.width(), r.min.y + fy * r.height());
+        let button = |p: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut frame = |events: Vec<egui::Event>, t: f64| {
+            ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                pointer(ui.ctx(), map, &doc, 1, &mut ext, &mut zoom, Role::Presenter, t, true);
+            })
+            .drop_without_applying_deltas();
+        };
+        // Press, drag across, release: one point with an arrow.
+        frame(vec![egui::Event::PointerMoved(at(0.3, 0.6)), button(at(0.3, 0.6), true)], 0.0);
+        frame(vec![egui::Event::PointerMoved(at(0.5, 0.4))], 0.1);
+        frame(vec![egui::Event::PointerMoved(at(0.6, 0.3))], 0.2);
+        frame(vec![button(at(0.6, 0.3), false)], 0.3);
+        // A click: a plain point.
+        frame(vec![egui::Event::PointerMoved(at(0.8, 0.8)), button(at(0.8, 0.8), true)], 1.0);
+        frame(vec![button(at(0.8, 0.8), false)], 1.1);
+        let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get(&it.key()) else { panic!("map state") };
+        assert_eq!(points.len(), 2, "{points:?}");
+        assert!((points[0].x - 0.3).abs() < 0.01 && (points[0].y - 0.6).abs() < 0.01, "{:?}", points[0]);
+        let to = points[0].to.expect("an arrow");
+        assert!((to[0] - 0.6).abs() < 0.01 && (to[1] - 0.3).abs() < 0.01, "{to:?}");
+        assert_eq!(points[1].to, None, "a click is a point");
+    }
+
     #[test]
     fn an_unpinned_injection_map_drops_its_points_on_the_next_slide() {
         let mut s = deckcraft_engine::Session::with_new();
@@ -2272,7 +2522,7 @@ mod tests {
         ext.sync_slide(&doc, 1);
         let id = objects_on(&doc, 1).pop().expect("the map").id;
         if let Some(ObjectState { st: TypeState::InjectionMap { points, .. }, .. }) = ext.states.get_mut(&(1, id)) {
-            points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0 });
+            points.push(Point { x: 0.5, y: 0.5, product: 0, dose: 4.0, to: None });
         }
         ext.sync_slide(&doc, 0);
         ext.sync_slide(&doc, 1);

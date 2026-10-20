@@ -116,7 +116,12 @@ pub fn wordart_menu(app: &mut SlideApp, ui: &mut Ui) {
             let (r, resp) = ui.allocate_exact_size(vec2(58.0, 58.0), egui::Sense::click());
             if resp.hovered() {
                 ui.painter().rect_filled(r, egui::CornerRadius::same(3), t.hover);
-                ui.painter().rect_stroke(r, egui::CornerRadius::same(3), egui::Stroke::new(1.0, t.accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(
+                    r,
+                    egui::CornerRadius::same(3),
+                    egui::Stroke::new(1.0, t.accent.gamma_multiply(0.6)),
+                    egui::StrokeKind::Inside,
+                );
             }
             if let Some(tex) = &tex {
                 let [w, h] = tex.size();
@@ -354,11 +359,21 @@ fn category_icon(p: &egui::Painter, r: Rect, which: &str) {
         }
         "matrix" | "Treemap" => {
             for (i, j) in [(0.0, 0.0), (0.5, 0.0), (0.0, 0.5), (0.5, 0.5)] {
-                p.rect(rect((i + 0.05, j + 0.05), (i + 0.47, j + 0.47)), CornerRadius::ZERO, if which == "Treemap" { blue } else { fill }, s, egui::StrokeKind::Inside);
+                p.rect(
+                    rect((i + 0.05, j + 0.05), (i + 0.47, j + 0.47)),
+                    CornerRadius::ZERO,
+                    if which == "Treemap" { blue } else { fill },
+                    s,
+                    egui::StrokeKind::Inside,
+                );
             }
         }
         "pyramid" | "Funnel" => {
-            let pts = if which == "pyramid" { vec![at(0.5, 0.05), at(0.95, 0.92), at(0.05, 0.92)] } else { vec![at(0.05, 0.1), at(0.95, 0.1), at(0.5, 0.92)] };
+            let pts = if which == "pyramid" {
+                vec![at(0.5, 0.05), at(0.95, 0.92), at(0.05, 0.92)]
+            } else {
+                vec![at(0.05, 0.1), at(0.95, 0.1), at(0.5, 0.92)]
+            };
             p.add(egui::Shape::convex_polygon(pts, fill, s));
         }
         "picture" => {
@@ -382,7 +397,12 @@ fn category_icon(p: &egui::Painter, r: Rect, which: &str) {
         }
         "Area" | "Surface" => {
             let pts = vec![at(0.05, 0.95), at(0.05, 0.6), at(0.35, 0.3), at(0.65, 0.5), at(0.95, 0.2), at(0.95, 0.95)];
-            p.add(egui::Shape::Path(egui::epaint::PathShape { points: pts, closed: true, fill: blue.gamma_multiply(0.7), stroke: egui::epaint::PathStroke::NONE }));
+            p.add(egui::Shape::Path(egui::epaint::PathShape {
+                points: pts,
+                closed: true,
+                fill: blue.gamma_multiply(0.7),
+                stroke: egui::epaint::PathStroke::NONE,
+            }));
         }
         "Scatter" => {
             for (x, y) in [(0.2, 0.7), (0.35, 0.45), (0.55, 0.6), (0.7, 0.3), (0.85, 0.2)] {
@@ -478,7 +498,8 @@ pub fn smartart_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::
                 ui.painter().rect_filled(band, egui::CornerRadius::ZERO, t.hover);
                 ui.painter().text(pos2(band.min.x + 8.0, band.center().y), egui::Align2::LEFT_CENTER, title, crate::theme::bold(12.5), t.text);
                 egui::ScrollArea::vertical().id_salt(("deckrt-smartart-dialog", &cat)).max_height(390.0).auto_shrink([false, false]).show(ui, |ui| {
-                    let kinds: Vec<(&'static str, &'static str)> = LAYOUTS.iter().copied().filter(|(k, _)| cat == "all" || category(k) == cat).collect();
+                    let kinds: Vec<(&'static str, &'static str)> =
+                        LAYOUTS.iter().copied().filter(|(k, _)| cat == "all" || category(k) == cat).collect();
                     egui::Grid::new(("deckrt-smartart-grid", &cat)).spacing(vec2(4.0, 4.0)).show(ui, |ui| {
                         for (i, (k, label)) in kinds.iter().enumerate() {
                             let ctx = ui.ctx().clone();

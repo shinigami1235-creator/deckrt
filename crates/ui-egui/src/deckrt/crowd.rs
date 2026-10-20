@@ -50,6 +50,9 @@ pub struct Crowd {
     seq: u32,
     /// The form opened by itself when the show reached its end.
     pub auto_asked: bool,
+    /// The form is open because the show reached its end (not by the presenter's button), so
+    /// going back into the slides closes it again.
+    pub auto_open: bool,
 }
 
 impl Default for Crowd {
@@ -63,11 +66,35 @@ impl Default for Crowd {
             last: HashMap::new(),
             seq: 0,
             auto_asked: false,
+            auto_open: false,
         }
     }
 }
 
 impl Crowd {
+    /// The feedback form follows the end of the show: it opens when the show reaches its end,
+    /// once, and closes again when the presenter goes back into the slides (unless the
+    /// presenter opened it with the button). Returns whether it changed.
+    pub fn follow_end(&mut self, ended: bool) -> bool {
+        if ended && !self.auto_asked {
+            self.auto_asked = true;
+            if !self.feedback_open {
+                self.feedback_open = true;
+                self.auto_open = true;
+                return true;
+            }
+        } else if !ended && self.auto_open {
+            // Back into the slides: the form goes, and opens again at the end.
+            self.auto_open = false;
+            self.auto_asked = false;
+            if self.feedback_open {
+                self.feedback_open = false;
+                return true;
+            }
+        }
+        false
+    }
+
     /// A reaction from phone `from` on slide `slide`. False when it was too soon after its last
     /// or reactions are off.
     pub fn react(&mut self, from: &str, kind: &str, slide: usize, now: f64) -> bool {
@@ -120,7 +147,9 @@ impl Crowd {
         let comments = self
             .answers
             .values()
-            .map(|a| json!({"name": a.name.clone().unwrap_or_else(|| "Anonymous".into()), "rating": a.rating, "useful": a.useful, "better": a.better}))
+            .map(
+                |a| json!({"name": a.name.clone().unwrap_or_else(|| "Anonymous".into()), "rating": a.rating, "useful": a.useful, "better": a.better}),
+            )
             .collect();
         Some(deckcraft_phones::results::Feedback { answers: self.answers.len() as u32, average: self.average(), ratings, comments })
     }
@@ -247,6 +276,7 @@ pub fn section(ui: &mut Ui, crowd: &mut Crowd, slide: usize) -> bool {
         let label = if crowd.feedback_open { "Close the form" } else { "Ask for feedback" };
         if ui.small_button(label).on_hover_text("Phones get a rating and two comment boxes").clicked() {
             crowd.feedback_open = !crowd.feedback_open;
+            crowd.auto_open = false;
             changed = true;
         }
         match (crowd.answers.len(), crowd.average()) {
@@ -261,6 +291,23 @@ pub fn section(ui: &mut Ui, crowd: &mut Crowd, slide: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_end_of_show_form_closes_when_the_show_goes_back() {
+        let mut c = Crowd::default();
+        assert!(!c.follow_end(false));
+        assert!(c.follow_end(true), "the end opens it");
+        assert!(c.feedback_open);
+        assert!(!c.follow_end(true), "once");
+        assert!(c.follow_end(false), "back into the slides closes it");
+        assert!(!c.feedback_open);
+        assert!(c.follow_end(true), "and the end opens it again");
+        // Opened by the presenter: going back leaves it open.
+        let mut c = Crowd { feedback_open: true, ..Default::default() };
+        assert!(!c.follow_end(true));
+        assert!(!c.follow_end(false));
+        assert!(c.feedback_open);
+    }
 
     #[test]
     fn reactions_are_limited_counted_and_float_away() {
@@ -285,7 +332,12 @@ mod tests {
         c.answer("a", Answer { name: Some("Sam".into()), rating: 4, useful: "The ranking poll".into(), better: String::new() });
         c.answer("a", Answer { name: Some("Sam".into()), rating: 5, useful: "The ranking poll".into(), better: String::new() });
         c.answer("b", Answer { name: None, rating: 0, useful: String::new(), better: "Slower on slide 7".into() });
-        let f = c.feedback_report().unwrap_or_else(|| deckcraft_phones::results::Feedback { answers: 0, average: None, ratings: [0; 5], comments: vec![] });
+        let f = c.feedback_report().unwrap_or_else(|| deckcraft_phones::results::Feedback {
+            answers: 0,
+            average: None,
+            ratings: [0; 5],
+            comments: vec![],
+        });
         assert_eq!(f.answers, 2);
         assert_eq!(f.average, Some(5.0), "a blank rating isn't counted");
         assert_eq!(f.ratings, [0, 0, 0, 0, 1]);

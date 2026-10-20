@@ -42,7 +42,8 @@ pub fn install(app: &mut SlideApp, paths: Vec<String>) {
     let mut unlisted = 0;
     for f in &installed {
         let family = f["family"].as_str().unwrap_or_default().to_string();
-        let styles: Vec<String> = f["styles"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        let styles: Vec<String> =
+            f["styles"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
         let file = std::path::PathBuf::from(f["file"].as_str().unwrap_or_default());
         if deckcraft_show_ext::fonts::register(&family, &styles, &file).is_err() {
             unlisted += 1;

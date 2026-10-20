@@ -33,9 +33,9 @@ impl Default for Prefs {
 /// The settings, read from disk the first time.
 pub fn get(app: &mut SlideApp) -> &mut Prefs {
     let dir = app.deckrt.settings_dir.clone();
-    app.deckrt.prefs.get_or_insert_with(|| {
-        dir.and_then(|d| std::fs::read(d.join(FILE)).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
-    })
+    app.deckrt
+        .prefs
+        .get_or_insert_with(|| dir.and_then(|d| std::fs::read(d.join(FILE)).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default())
 }
 
 /// Write the settings when they changed.

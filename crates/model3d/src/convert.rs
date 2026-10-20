@@ -340,8 +340,7 @@ fn obj_to_glb(stem: &str, bytes: &[u8], sibling: &dyn Fn(&str) -> Option<Vec<u8>
                 }
             }
             "f" => {
-                let corners: Vec<Corner> =
-                    rest.split_whitespace().filter_map(|t| parse_corner(t, pos.len(), uvs.len(), nrms.len())).collect();
+                let corners: Vec<Corner> = rest.split_whitespace().filter_map(|t| parse_corner(t, pos.len(), uvs.len(), nrms.len())).collect();
                 if corners.len() < 3 {
                     continue;
                 }

@@ -62,14 +62,17 @@ fn model_ready(app: &mut SlideApp) -> bool {
     let dir = app.deckrt.settings_dir.clone();
     app.deckrt.captions.load_pub(dir.as_deref());
     let m = app.deckrt.captions.settings.model;
-    std::env::var_os("DECKRT_CAPTIONS_TEST").is_some() || dir.as_deref().is_some_and(|d| m.ready(d) || deckcraft_captions::Model::ALL.iter().any(|x| x.ready(d)))
+    std::env::var_os("DECKRT_CAPTIONS_TEST").is_some()
+        || dir.as_deref().is_some_and(|d| m.ready(d) || deckcraft_captions::Model::ALL.iter().any(|x| x.ready(d)))
 }
 
 /// The button on the Slide Show tab.
 pub fn ribbon_button(app: &mut SlideApp, ui: &mut Ui) {
     let en = app.session.active().is_some_and(|d| !d.doc.slides.is_empty());
     if crate::widgets::big_button(ui, crate::icons::Icon::Coach, "Rehearse\nwith Coach", en)
-        .on_hover_text("Rehearse out loud from the first slide. Afterwards: time per slide, pace, filler words, long pauses, slides read out word for word")
+        .on_hover_text(
+            "Rehearse out loud from the first slide. Afterwards: time per slide, pace, filler words, long pauses, slides read out word for word",
+        )
         .clicked()
     {
         if !model_ready(app) {
@@ -124,9 +127,7 @@ pub fn logic(app: &mut SlideApp, show: &mut Show, ctx: &egui::Context, doc: &dec
         };
         let n = doc.slides.len();
         let texts: Vec<String> = (0..n).map(|i| slide_text(doc, i)).collect();
-        let prompts = (0..n)
-            .map(|i| format!("{FILLER_PROMPT} {}", deckcraft_captions::prompt_from(&super::captions::slide_texts(doc, i))))
-            .collect();
+        let prompts = (0..n).map(|i| format!("{FILLER_PROMPT} {}", deckcraft_captions::prompt_from(&super::captions::slide_texts(doc, i)))).collect();
         let titles = doc.slides.iter().map(|s| s.title()).collect();
         let deck = app.session.active().and_then(|d| d.path.clone()).map(std::path::PathBuf::from);
         show.ext.coach = Some(Live {

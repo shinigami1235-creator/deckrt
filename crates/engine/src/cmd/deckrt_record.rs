@@ -78,7 +78,10 @@ fn set_narration(s: &mut Session, p: &Value) -> Result<Value> {
         let audio = if item.get("path").is_some() || item.get("data").is_some() {
             let (name, bytes) = super::insert::media_bytes(item, cmd)?;
             let bytes = Arc::new(bytes);
-            let probed = deckcraft_media::probe(&bytes).ok().filter(|i| i.audio.is_some()).ok_or_else(|| bad(cmd, format!("{name} isn't audio deckrt can play")))?;
+            let probed = deckcraft_media::probe(&bytes)
+                .ok()
+                .filter(|i| i.audio.is_some())
+                .ok_or_else(|| bad(cmd, format!("{name} isn't audio deckrt can play")))?;
             let bytes = Arc::try_unwrap(bytes).unwrap_or_else(|a| (*a).clone());
             Some((name, bytes, probed.duration_ms.min(u32::MAX as u64) as u32))
         } else {
@@ -114,7 +117,14 @@ fn set_narration(s: &mut Session, p: &Value) -> Result<Value> {
                 sl.shapes.push(shape);
                 sl.animations.insert(
                     0,
-                    Animation { shape: id, class: AnimClass::Media, effect: "play".into(), start: AnimStart::WithPrevious, duration_ms: 1, ..Default::default() },
+                    Animation {
+                        shape: id,
+                        class: AnimClass::Media,
+                        effect: "play".into(),
+                        start: AnimStart::WithPrevious,
+                        duration_ms: 1,
+                        ..Default::default()
+                    },
                 );
                 n += 1;
             }
@@ -195,8 +205,11 @@ mod tests {
     fn narration_replaces_clears_and_survives_pptx() {
         let mut s = Session::with_new();
         s.execute("slide.new", &json!({"layout": "blank"})).expect("slide");
-        s.execute("deckrt.setNarration", &json!({"slides": [{"index": 0, "data": wav(1500), "name": "n0.wav", "ms": 1500}, {"index": 1, "ms": 4000}]}))
-            .expect("narrate");
+        s.execute(
+            "deckrt.setNarration",
+            &json!({"slides": [{"index": 0, "data": wav(1500), "name": "n0.wav", "ms": 1500}, {"index": 1, "ms": 4000}]}),
+        )
+        .expect("narrate");
         let doc = &s.doc().expect("doc").doc;
         let (_, clip) = narration_of(&doc.slides[0]).expect("narration on slide 1");
         assert!(clip.autoplay && clip.hide_while_not_playing);

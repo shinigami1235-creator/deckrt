@@ -85,7 +85,9 @@ fn pane_contexts() -> Vec<Context> {
         pane!("pane-size", "format", "size", shape),
         pane!("pane-text", "format", "text", shape),
         pane!("pane-picture", "format", "picture", picture),
-        pane!("pane-background", "background", "fill", |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }),
+        pane!("pane-background", "background", "fill", |s| {
+            let _ = s.execute("slide.go", &json!({"index": 2}));
+        }),
         pane!("pane-animation", "animation", "fill", shape),
         pane!("pane-selection", "selection", "fill", shape),
         pane!("pane-comments", "comments", "fill", shape),
@@ -140,7 +142,10 @@ fn pane_contexts() -> Vec<Context> {
 
 fn select_live(s: &mut Session, slide: usize) {
     let _ = s.execute("slide.go", &json!({"index": slide}));
-    let id = s.doc().ok().and_then(|st| st.current_slide().and_then(|sl| sl.shapes.iter().find(|sh| deckcraft_interactive::object::is_live(sh)).map(|sh| sh.id.0)));
+    let id = s
+        .doc()
+        .ok()
+        .and_then(|st| st.current_slide().and_then(|sl| sl.shapes.iter().find(|sh| deckcraft_interactive::object::is_live(sh)).map(|sh| sh.id.0)));
     if let Some(id) = id {
         let _ = s.execute("edit.select", &json!({"ids": [id]}));
     }
@@ -151,19 +156,115 @@ fn contexts() -> Vec<Context> {
         return pane_contexts();
     }
     vec![
-        Context { name: "home-nothing", tab: "Home", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "home-shape", tab: "Home", setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)), prep: None, region: Region::Ribbon },
-        Context { name: "insert", tab: "Insert", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "draw", tab: "Draw", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "design", tab: "Design", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "transitions", tab: "Transitions", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "animations", tab: "Animations", setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)), prep: None, region: Region::Ribbon },
-        Context { name: "slideshow", tab: "Slide Show", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "record", tab: "Record", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "review", tab: "Review", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 20})); }, prep: None, region: Region::Ribbon },
-        Context { name: "view", tab: "View", setup: |s| { let _ = s.execute("slide.go", &json!({"index": 2})); }, prep: None, region: Region::Ribbon },
-        Context { name: "shape-format", tab: "Shape Format", setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)), prep: None, region: Region::Ribbon },
-        Context { name: "picture-format", tab: "Picture Format", setup: |s| select_kind(s, 20, |k| matches!(k, ShapeKind::Picture { .. })), prep: None, region: Region::Ribbon },
+        Context {
+            name: "home-nothing",
+            tab: "Home",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "home-shape",
+            tab: "Home",
+            setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)),
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "insert",
+            tab: "Insert",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "draw",
+            tab: "Draw",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "design",
+            tab: "Design",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "transitions",
+            tab: "Transitions",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "animations",
+            tab: "Animations",
+            setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)),
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "slideshow",
+            tab: "Slide Show",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "record",
+            tab: "Record",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "review",
+            tab: "Review",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 20}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "view",
+            tab: "View",
+            setup: |s| {
+                let _ = s.execute("slide.go", &json!({"index": 2}));
+            },
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "shape-format",
+            tab: "Shape Format",
+            setup: |s| select_kind(s, 21, |k| matches!(k, ShapeKind::Shape)),
+            prep: None,
+            region: Region::Ribbon,
+        },
+        Context {
+            name: "picture-format",
+            tab: "Picture Format",
+            setup: |s| select_kind(s, 20, |k| matches!(k, ShapeKind::Picture { .. })),
+            prep: None,
+            region: Region::Ribbon,
+        },
         Context {
             name: "table",
             tab: "Table Design",
@@ -421,9 +522,19 @@ fn click_at(h: &mut Harness<'_, SlideApp>, r: egui::Rect) {
     let p = r.center();
     h.input_mut().events.push(egui::Event::PointerMoved(p));
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
     h.run_steps(4);
 }
 
@@ -445,7 +556,11 @@ fn try_click(cx: &Context, first: &Target, second: Option<&Target>) -> Result<(V
             Some(item) => {
                 // Bring the item into view first: long menus scroll.
                 let near = |r: egui::Rect| (r.center() - item.rect.center()).length();
-                if let Some(n) = h.query_all_by_role(Role::Button).filter(|n| n.accesskit_node().label().unwrap_or_default().replace('\n', " ") == item.label).min_by(|a, b| near(a.rect()).total_cmp(&near(b.rect()))) {
+                if let Some(n) = h
+                    .query_all_by_role(Role::Button)
+                    .filter(|n| n.accesskit_node().label().unwrap_or_default().replace('\n', " ") == item.label)
+                    .min_by(|a, b| near(a.rect()).total_cmp(&near(b.rect())))
+                {
                     n.scroll_to_me();
                 }
                 h.run_steps(3);
@@ -487,7 +602,9 @@ fn audit() {
         let h = harness(&cx);
         let (buttons, disabled) = targets(&cx, &h);
         drop(h);
-        write(json!({"context": cx.name, "tab": cx.tab, "buttons": buttons.iter().map(|b| format!("{} @{:.0}", b.label, b.rect.center().y)).collect::<Vec<_>>(), "disabled": disabled}));
+        write(
+            json!({"context": cx.name, "tab": cx.tab, "buttons": buttons.iter().map(|b| format!("{} @{:.0}", b.label, b.rect.center().y)).collect::<Vec<_>>(), "disabled": disabled}),
+        );
         for b in &buttons {
             match try_click(&cx, b, None) {
                 Err(p) => write(json!({"context": cx.name, "button": b.label, "panic": p})),

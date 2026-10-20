@@ -13,12 +13,14 @@ use crate::*;
 
 /// Commands that touch the file system, other windows or real time; the soak drives the rest.
 fn skipped(id: &str) -> bool {
-    matches!(id, "file.close" | "file.open" | "file.save" | "file.saveAs" | "file.export" | "file.saveTemplate" | "file.openBytes" | "file.new"
+    matches!(
+        id,
+        "file.close" | "file.open" | "file.save" | "file.saveAs" | "file.export" | "file.saveTemplate" | "file.openBytes" | "file.new"
         // deckrt hook: the sample deck opens as a second document, like file.new.
         | "deckrt.openSample"
         // deckrt hook: Add Fonts writes into the user fonts folder.
-        | "font.install")
-        || id.starts_with("window.")
+        | "font.install"
+    ) || id.starts_with("window.")
         || id.starts_with("show.")
         || id.starts_with("media.")
 }

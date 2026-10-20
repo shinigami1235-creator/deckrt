@@ -148,7 +148,15 @@ mod tests {
         assert!(back.written_at.ends_with('Z'));
         assert_eq!(back.polls[0].counts, vec![2, 1]);
         // A second write replaces the first.
-        let r2 = ShowResults { deck: String::new(), written_at: String::new(), phones: 0, polls: vec![], questions: vec![], feedback: None, reactions: vec![] };
+        let r2 = ShowResults {
+            deck: String::new(),
+            written_at: String::new(),
+            phones: 0,
+            polls: vec![],
+            questions: vec![],
+            feedback: None,
+            reactions: vec![],
+        };
         write_results(&deck, r2).unwrap();
         let back: ShowResults = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(back.polls.is_empty());

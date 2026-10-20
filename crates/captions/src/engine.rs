@@ -14,11 +14,17 @@ use super::{Cut, Cutter, RATE, Settings, clean_line, resample_to};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The model is loaded and the microphone is open.
-    Ready { microphone: String },
+    Ready {
+        microphone: String,
+    },
     /// The phrase being spoken, recognised so far. Replaced by the next partial or line.
     Partial(String),
     /// A finished phrase, with when it was spoken in seconds since the microphone opened.
-    Line { text: String, start: f64, end: f64 },
+    Line {
+        text: String,
+        start: f64,
+        end: f64,
+    },
     Error(String),
 }
 

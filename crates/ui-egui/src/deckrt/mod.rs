@@ -4,23 +4,23 @@
 
 pub mod canvas;
 pub mod captions;
+pub mod check;
 pub mod coach;
 pub mod crowd;
 pub mod finder;
 pub mod fonts;
 pub mod format_picture;
+#[cfg(feature = "gpu3d")]
+pub mod gpu;
 pub mod insert_previews;
 pub mod messages;
 pub mod notes;
 pub mod prefs;
 pub mod preview;
+pub mod record;
 pub mod screenshot;
 pub mod shapes;
-pub mod record;
 pub mod video;
-pub mod check;
-#[cfg(feature = "gpu3d")]
-pub mod gpu;
 #[cfg(not(feature = "gpu3d"))]
 pub mod gpu {
     //! Without the `gpu3d` feature there is no wgpu path; models draw through the software
@@ -43,6 +43,15 @@ pub mod gpu {
             _h: u32,
             _hidden: &[String],
         ) -> Option<egui::TextureId> {
+            None
+        }
+        pub fn paint_offscreen(
+            &self,
+            _ctx: &egui::Context,
+            _shapes: Vec<egui::epaint::ClippedShape>,
+            _size: [u32; 2],
+            _ppp: f32,
+        ) -> Option<image::RgbaImage> {
             None
         }
     }
@@ -398,7 +407,8 @@ pub fn tidy_button(app: &mut SlideApp, ui: &mut Ui) {
     {
         match app.session.execute("deckrt.tidy", &serde_json::json!({})) {
             Ok(r) => {
-                let list: Vec<String> = r["changes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+                let list: Vec<String> =
+                    r["changes"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
                 app.set_status(if list.is_empty() { "Nothing to tidy on this slide.".to_string() } else { format!("{}.", list.join(". ")) });
             }
             Err(e) => app.set_status(e.to_string()),

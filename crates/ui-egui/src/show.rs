@@ -41,7 +41,7 @@ pub struct Show {
     pub(crate) pen: bool, // deckrt hook: pub(crate)
     /// A dot that follows the pointer and leaves no ink (`Cmd/Ctrl+L`).
     laser: bool,
-    strokes: Vec<Vec<Pos2>>,
+    pub(crate) strokes: Vec<Vec<Pos2>>, // deckrt hook: pub(crate)
     /// Digits typed for Go to Slide, shown until Enter, Esc, or a short pause.
     goto: String,
     goto_at: f64,
@@ -876,7 +876,7 @@ pub fn ui(app: &mut SlideApp, ui: &mut Ui) {
             if let Some(tex) = &tex {
                 painter.image(tex.id(), srect, show.zoom_uv(), Color32::WHITE);
             }
-            crate::deckrt::show::draw_audience(app, &mut show, &ctx, &painter, srect, &doc, now); // deckrt hook
+            crate::deckrt::show::draw_audience(app, &mut show, &ctx, &painter, srect, &doc, now, tex.as_ref().map(|t| t.id())); // deckrt hook
             // Playing video: the current frame in its box, or full screen.
             let (sw, sh) = (doc.slide_size.width as f32, doc.slide_size.height as f32);
             let uv = show.zoom_uv();
@@ -1401,6 +1401,11 @@ impl Show {
         } else {
             false
         }
+    }
+
+    /// deckrt hook: a slide transition is playing.
+    pub(crate) fn in_transition(&self) -> bool {
+        self.trans.is_some()
     }
 
     pub fn blank_name(&self) -> Option<&'static str> {

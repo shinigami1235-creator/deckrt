@@ -152,7 +152,10 @@ pub fn read_wav(b: &[u8]) -> Option<(u32, Vec<f32>)> {
                 return None;
             }
             let ch = channels as usize;
-            let s: Vec<f32> = body.chunks_exact(2 * ch).map(|f| f.chunks_exact(2).map(|x| i16::from_le_bytes([x[0], x[1]]) as f32 / 32768.0).sum::<f32>() / ch as f32).collect();
+            let s: Vec<f32> = body
+                .chunks_exact(2 * ch)
+                .map(|f| f.chunks_exact(2).map(|x| i16::from_le_bytes([x[0], x[1]]) as f32 / 32768.0).sum::<f32>() / ch as f32)
+                .collect();
             return Some((rate, s));
         }
         i += 8 + len + (len & 1);

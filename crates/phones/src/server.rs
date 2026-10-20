@@ -161,7 +161,9 @@ impl Hub {
         if !exists {
             let keep = self.max_phones.saturating_mul(4).max(16);
             while inner.phones.len() >= keep {
-                let Some(oldest) = inner.phones.iter().filter(|(_, p)| p.tx.is_none()).min_by_key(|(_, p)| p.serial).map(|(k, _)| k.clone()) else { break };
+                let Some(oldest) = inner.phones.iter().filter(|(_, p)| p.tx.is_none()).min_by_key(|(_, p)| p.serial).map(|(k, _)| k.clone()) else {
+                    break;
+                };
                 inner.phones.remove(&oldest);
             }
         }

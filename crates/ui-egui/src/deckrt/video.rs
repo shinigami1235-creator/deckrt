@@ -119,7 +119,8 @@ fn narration_pcm(doc: &Presentation, id: MediaId, rate: u32) -> Vec<i16> {
 
 fn render(doc: &Presentation, slide: usize, w: u32, h: u32) -> Vec<u8> {
     let sw = doc.slide_size.width.max(1.0);
-    let img = deckcraft_render::render_slide(doc, slide, &deckcraft_render::RenderOpts { scale: w as f64 / sw, size: Some((w, h)), ..Default::default() });
+    let img =
+        deckcraft_render::render_slide(doc, slide, &deckcraft_render::RenderOpts { scale: w as f64 / sw, size: Some((w, h)), ..Default::default() });
     let rgba = img.to_straight();
     if img.width != w || img.height != h {
         return nv12(&vec![255u8; (w * h * 4) as usize], w as usize, h as usize);
@@ -128,7 +129,14 @@ fn render(doc: &Presentation, slide: usize, w: u32, h: u32) -> Vec<u8> {
 }
 
 /// Write the video. Runs on its own thread.
-fn export(doc: Arc<Presentation>, segs: Vec<Seg>, path: PathBuf, opts: Options, progress: Arc<Mutex<Progress>>, cancel: Arc<AtomicBool>) -> Result<PathBuf, String> {
+fn export(
+    doc: Arc<Presentation>,
+    segs: Vec<Seg>,
+    path: PathBuf,
+    opts: Options,
+    progress: Arc<Mutex<Progress>>,
+    cancel: Arc<AtomicBool>,
+) -> Result<PathBuf, String> {
     // A failed export leaves no half-written MP4 behind.
     let r = export_to(doc, segs, path.clone(), opts, progress, cancel);
     if r.is_err() {
@@ -137,7 +145,14 @@ fn export(doc: Arc<Presentation>, segs: Vec<Seg>, path: PathBuf, opts: Options, 
     r
 }
 
-fn export_to(doc: Arc<Presentation>, segs: Vec<Seg>, path: PathBuf, opts: Options, progress: Arc<Mutex<Progress>>, cancel: Arc<AtomicBool>) -> Result<PathBuf, String> {
+fn export_to(
+    doc: Arc<Presentation>,
+    segs: Vec<Seg>,
+    path: PathBuf,
+    opts: Options,
+    progress: Arc<Mutex<Progress>>,
+    cancel: Arc<AtomicBool>,
+) -> Result<PathBuf, String> {
     let mut w = Writer::create(&path, &opts)?;
     let (fw, fh) = (opts.width, opts.height);
     let dt = SECOND / opts.fps as i64;
@@ -187,7 +202,11 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
     ui.set_max_width(520.0);
     let Some(st) = app.session.active() else { return true };
     let doc = &st.doc;
-    let name = st.path.as_deref().and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).unwrap_or_else(|| "Presentation".into());
+    let name = st
+        .path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "Presentation".into());
     let v = &mut app.deckrt.video;
     let timed = doc.slides.iter().any(|s| s.transition.as_ref().is_some_and(|t| t.advance_after_ms.is_some()));
     let narrated = doc.slides.iter().filter(|s| !s.hidden && deckcraft_engine::cmd::deckrt_record::narration_of(s).is_some()).count();
@@ -214,7 +233,11 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
         n => format!(", {n} with narration"),
     };
     ui.label(format!("{} slides, {} long{narr_line}.", segs.len(), deckcraft_captions::coach::clock(total)));
-    ui.label(RichText::new("Animations show finished, transitions become fades, and videos on slides show their first frame.").size(12.0).color(Color32::from_gray(130)));
+    ui.label(
+        RichText::new("Animations show finished, transitions become fades, and videos on slides show their first frame.")
+            .size(12.0)
+            .color(Color32::from_gray(130)),
+    );
     ui.add_space(8.0);
 
     let mut start: Option<PathBuf> = None;
@@ -231,7 +254,11 @@ pub fn body(app: &mut SlideApp, ui: &mut Ui) -> bool {
                 job.cancel.store(true, Ordering::Relaxed);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(super::check::framed(ui, "Close", 72.0)).on_hover_text("The export carries on; the status line says when it's done").clicked() {
+                if ui
+                    .add(super::check::framed(ui, "Close", 72.0))
+                    .on_hover_text("The export carries on; the status line says when it's done")
+                    .clicked()
+                {
                     close = true;
                 }
             });
@@ -303,7 +330,8 @@ mod tests {
         let mut doc = Presentation::default();
         doc.slides.clear();
         let mut a = deckcraft_model::Slide::default();
-        a.transition = Some(deckcraft_model::Transition { advance_after_ms: Some(7000), kind: "fade".into(), duration_ms: 800, ..Default::default() });
+        a.transition =
+            Some(deckcraft_model::Transition { advance_after_ms: Some(7000), kind: "fade".into(), duration_ms: 800, ..Default::default() });
         let mut b = deckcraft_model::Slide::default();
         b.transition = Some(deckcraft_model::Transition { kind: "fade".into(), duration_ms: 800, ..Default::default() });
         let c = deckcraft_model::Slide { hidden: true, ..Default::default() };

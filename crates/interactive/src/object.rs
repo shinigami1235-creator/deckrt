@@ -462,7 +462,19 @@ fn is_zero_f(v: &f64) -> bool {
 impl InteractiveObject {
     pub fn new(config: Config) -> Self {
         let trigger = if config.kind() == Kind::Measure { Trigger::AudienceClick } else { Trigger::Presenter };
-        InteractiveObject { v: VERSION, config, label: String::new(), trigger, shortcut: None, visible: true, next_clicks: 0, with_slide: false, after_animations: false, delay: 0.0, anchor: None }
+        InteractiveObject {
+            v: VERSION,
+            config,
+            label: String::new(),
+            trigger,
+            shortcut: None,
+            visible: true,
+            next_clicks: 0,
+            with_slide: false,
+            after_animations: false,
+            delay: 0.0,
+            anchor: None,
+        }
     }
 
     pub fn kind(&self) -> Kind {

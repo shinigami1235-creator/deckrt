@@ -6,6 +6,15 @@ in the test build so far.
 
 ## Unreleased
 
+- **Phones show the slide as it is on the screen.** An opened popup, a measurement, the picture
+  a swap is on, injection points and drawings all reach the phones, in presenter view on one
+  screen too. An image swap no longer shows its pictures stacked on the phones.
+- **Arrows on the injection map.** Drag from where the needle goes in to the target area for an
+  arrow; a click still places a point.
+- **Polls wait on the phones** until you open them.
+- **The feedback form closes again** when you go back from the end of the show, and opens again
+  when you reach it.
+- **Fixed: ending a show with phones connected closed deckrt.**
 - **Update deckrt in the Start menu.** The installer puts the updater in with the program, so the
   one you run always matches the build. Each build's deckrt.exe also has its own version number
   (Properties › Details).

@@ -47,11 +47,20 @@ pub fn used(ctx: &egui::Context, name: &str) {
 }
 
 fn label_of(name: &str) -> &'static str {
-    CATALOG.iter().find(|p| p.name == name).map(|p| p.label).or_else(|| deckcraft_engine::tools::FREEFORM_TOOLS.iter().find(|(n, _)| *n == name).map(|(_, l)| *l)).unwrap_or("")
+    CATALOG
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| p.label)
+        .or_else(|| deckcraft_engine::tools::FREEFORM_TOOLS.iter().find(|(n, _)| *n == name).map(|(_, l)| *l))
+        .unwrap_or("")
 }
 
 fn static_name(name: &str) -> Option<&'static str> {
-    CATALOG.iter().find(|p| p.name == name).map(|p| p.name).or_else(|| deckcraft_engine::tools::FREEFORM_TOOLS.iter().find(|(n, _)| *n == name).map(|(n, _)| *n))
+    CATALOG
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| p.name)
+        .or_else(|| deckcraft_engine::tools::FREEFORM_TOOLS.iter().find(|(n, _)| *n == name).map(|(n, _)| *n))
 }
 
 /// One clickable shape cell. Returns whether it was clicked.

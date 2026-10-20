@@ -167,7 +167,11 @@ pub fn presenter_controls(ui: &mut Ui, show: &mut Show) {
     let lvl = (live.rec.level() * 3.0).clamp(0.0, 1.0);
     let mut f = m;
     f.set_width(m.width() * lvl);
-    ui.painter().rect_filled(f, CornerRadius::same(2), if lvl > 0.95 { Color32::from_rgb(0xe5, 0x39, 0x35) } else { Color32::from_rgb(0x4c, 0xaf, 0x50) });
+    ui.painter().rect_filled(
+        f,
+        CornerRadius::same(2),
+        if lvl > 0.95 { Color32::from_rgb(0xe5, 0x39, 0x35) } else { Color32::from_rgb(0x4c, 0xaf, 0x50) },
+    );
     if ui.button(if paused { "Resume" } else { "Pause" }).on_hover_text("Pause stops the recording and the slide's clock").clicked() {
         live.rec.set_paused(!paused);
     }
@@ -176,7 +180,11 @@ pub fn presenter_controls(ui: &mut Ui, show: &mut Show) {
             ui.label(RichText::new(e).size(12.0).color(Color32::from_rgb(0xff, 0x8a, 0x80)));
         }
         Some(Ok(_)) if live.rec.secs() > 3.0 && live.loudest < 0.002 => {
-            ui.label(RichText::new("No sound from the microphone. Check Windows Settings › Privacy › Microphone.").size(12.0).color(Color32::from_rgb(0xff, 0xb6, 0x4d)));
+            ui.label(
+                RichText::new("No sound from the microphone. Check Windows Settings › Privacy › Microphone.")
+                    .size(12.0)
+                    .color(Color32::from_rgb(0xff, 0xb6, 0x4d)),
+            );
         }
         _ => {}
     }

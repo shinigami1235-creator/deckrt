@@ -3,14 +3,28 @@
 
 use crate::object::InjectionMapConfig;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Point {
-    /// In the object's own box, 0 to 1.
+    /// In the object's own box, 0 to 1. For an arrow, where the needle goes in.
     pub x: f64,
     pub y: f64,
     /// Index into the configured products.
     pub product: usize,
     pub dose: f64,
+    /// deckrt: an arrow's end, the area the product is placed in (a filler's direction from
+    /// the insertion point). `None` for a plain point.
+    pub to: Option<[f64; 2]>,
+}
+
+/// How far, in the object's box, a drag must go before it makes an arrow rather than a point.
+pub const ARROW_MIN: f64 = 0.03;
+
+/// The end an arrow takes from a drag ending at `to`, or `None` when the drag was too short to
+/// be more than a click.
+pub fn arrow_end(from: [f64; 2], to: [f64; 2]) -> Option<[f64; 2]> {
+    let to = [to[0].clamp(0.0, 1.0), to[1].clamp(0.0, 1.0)];
+    let d = ((to[0] - from[0]).powi(2) + (to[1] - from[1]).powi(2)).sqrt();
+    (d.is_finite() && d >= ARROW_MIN).then_some(to)
 }
 
 /// `12`, `0.4`, `2.5`: up to two decimals, trailing zeros dropped, floating error rounded away.
@@ -91,12 +105,21 @@ mod tests {
         };
         assert_eq!(totals_line(&c, &[]), "");
         let pts = [
-            Point { x: 0.1, y: 0.1, product: 0, dose: 4.0 },
-            Point { x: 0.2, y: 0.2, product: 0, dose: 8.0 },
-            Point { x: 0.3, y: 0.3, product: 1, dose: 0.4 },
+            Point { x: 0.1, y: 0.1, product: 0, dose: 4.0, to: None },
+            Point { x: 0.2, y: 0.2, product: 0, dose: 8.0, to: None },
+            Point { x: 0.3, y: 0.3, product: 1, dose: 0.4, to: Some([0.4, 0.2]) },
         ];
         assert_eq!(totals_line(&c, &pts), "Toxin 12 U · Filler 0.4 mL");
         assert_eq!(default_dose(&c, 1), 0.1);
         assert_eq!(default_dose(&c, 9), 0.0);
+    }
+
+    #[test]
+    fn a_short_drag_is_a_point_and_a_long_one_an_arrow() {
+        assert_eq!(arrow_end([0.5, 0.5], [0.51, 0.5]), None);
+        assert_eq!(arrow_end([0.5, 0.5], [0.7, 0.4]), Some([0.7, 0.4]));
+        // The end stays in the box.
+        assert_eq!(arrow_end([0.5, 0.5], [1.4, -0.2]), Some([1.0, 0.0]));
+        assert_eq!(arrow_end([0.5, 0.5], [f64::NAN, 0.5]), None);
     }
 }

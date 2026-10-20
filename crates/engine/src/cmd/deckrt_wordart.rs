@@ -92,8 +92,15 @@ pub fn apply(i: usize, r: &mut RunProps) -> bool {
             None,
             Some(Glow { color: c(S::Accent1).with(T::Alpha(40_000)), radius: 5.0 }),
         ),
-        4 => (grad(90.0, &[(0.0, lum(S::Accent4, 40_000, 60_000)), (0.55, c(S::Accent4)), (1.0, lum(S::Accent4, 75_000, 0))]), None, Some(soft()), None),
-        5 => (grad(90.0, &[(0.0, lum(S::Accent3, 60_000, 40_000)), (0.5, c(S::Accent3)), (1.0, lum(S::Accent3, 50_000, 0))]), None, Some(soft()), None),
+        4 => (
+            grad(90.0, &[(0.0, lum(S::Accent4, 40_000, 60_000)), (0.55, c(S::Accent4)), (1.0, lum(S::Accent4, 75_000, 0))]),
+            None,
+            Some(soft()),
+            None,
+        ),
+        5 => {
+            (grad(90.0, &[(0.0, lum(S::Accent3, 60_000, 40_000)), (0.5, c(S::Accent3)), (1.0, lum(S::Accent3, 50_000, 0))]), None, Some(soft()), None)
+        }
         6 => (Fill::solid(c(S::Accent1)), Some(Line::solid(c(S::Bg1), 1.0)), Some(shadow(c(S::Tx1).with(T::Alpha(55_000)), 4.0, 3.0)), None),
         7 => (Fill::solid(c(S::Accent4)), Some(Line::solid(c(S::Accent2), 1.0)), None, None),
         8 => (Fill::solid(c(S::Bg1)), Some(Line::solid(lum(S::Accent1, 60_000, 40_000), 1.0)), None, None),
@@ -102,7 +109,12 @@ pub fn apply(i: usize, r: &mut RunProps) -> bool {
         11 => (Fill::solid(c(S::Bg1)), Some(Line::solid(c(S::Tx1), 1.25)), Some(soft()), None),
         12 => (grad(90.0, &[(0.0, lum(S::Accent1, 40_000, 60_000)), (0.5, c(S::Accent1)), (1.0, lum(S::Accent1, 50_000, 0))]), None, None, None),
         13 => (Fill::solid(c(S::Bg1)), Some(Line::solid(c(S::Accent2), 1.25)), Some(hard(c(S::Accent2))), None),
-        14 => (Fill::solid(lum(S::Bg2, 90_000, 0)), Some(Line::solid(lum(S::Bg1, 65_000, 0), 0.75)), Some(shadow(c(S::Tx1).with(T::Alpha(25_000)), 2.0, 1.0)), None),
+        14 => (
+            Fill::solid(lum(S::Bg2, 90_000, 0)),
+            Some(Line::solid(lum(S::Bg1, 65_000, 0), 0.75)),
+            Some(shadow(c(S::Tx1).with(T::Alpha(25_000)), 2.0, 1.0)),
+            None,
+        ),
         15 => (stripes(-45.0, 14, c(S::Tx1), lum(S::Tx1, 50_000, 50_000), 0.6), None, None, None),
         16 => (stripes(90.0, 12, c(S::Accent3), lum(S::Accent3, 40_000, 60_000), 0.5), None, None, None),
         17 => (stripes(45.0, 14, c(S::Accent1), lum(S::Accent1, 20_000, 80_000), 0.35), Some(Line::solid(c(S::Accent1), 0.75)), None, None),

@@ -36,9 +36,19 @@ fn click(h: &mut Harness<'_, SlideApp>, label: &str) {
     let p = r.center();
     h.input_mut().events.push(egui::Event::PointerMoved(p));
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: p,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
     h.run_steps(6);
 }
 
@@ -115,8 +125,18 @@ fn smartart_dialog_takes_enter_in_its_text_box() {
         .find(|n| n.accesskit_node().value().is_some_and(|v| v.contains("Plan")))
         .expect("the text box")
         .rect();
-    h.input_mut().events.push(egui::Event::PointerButton { pos: text.center(), button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
-    h.input_mut().events.push(egui::Event::PointerButton { pos: text.center(), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: text.center(),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: text.center(),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
     h.run_steps(2);
     h.key_press(egui::Key::Enter);
     h.run_steps(3);
@@ -149,9 +169,19 @@ fn the_animation_pane_row_arrow_opens_its_menu_and_reorders() {
     let r = h.query_all_by_label("Move Later").last().unwrap().rect();
     h.input_mut().events.push(egui::Event::PointerMoved(r.center()));
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: r.center(), button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: r.center(),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
     h.run_steps(1);
-    h.input_mut().events.push(egui::Event::PointerButton { pos: r.center(), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.input_mut().events.push(egui::Event::PointerButton {
+        pos: r.center(),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
     h.run_steps(4);
     let now = h.state().session.active().unwrap().current_slide().unwrap().animations[1].shape;
     assert_eq!(now, first);
@@ -160,12 +190,23 @@ fn the_animation_pane_row_arrow_opens_its_menu_and_reorders() {
 #[test]
 fn a_click_on_the_open_tab_keeps_the_ribbon_and_a_double_click_hides_it() {
     let mut h = harness("Home", |_| {});
-    let tab = |h: &Harness<'_, SlideApp>| h.query_all_by_label("Home").find(|n| n.rect().min.y > 45.0 && n.rect().min.y < 90.0).unwrap().rect().center();
+    let tab =
+        |h: &Harness<'_, SlideApp>| h.query_all_by_label("Home").find(|n| n.rect().min.y > 45.0 && n.rect().min.y < 90.0).unwrap().rect().center();
     let press = |h: &mut Harness<'_, SlideApp>, p: egui::Pos2, frames: usize| {
         h.input_mut().events.push(egui::Event::PointerMoved(p));
-        h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Default::default(),
+        });
         h.run_steps(1);
-        h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        });
         h.run_steps(frames);
     };
     let p = tab(&h);

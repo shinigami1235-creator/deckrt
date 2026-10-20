@@ -269,7 +269,8 @@ pub fn sync_fallback(sh: &mut Shape, o: &InteractiveObject) {
             match c.kind {
                 obj::PollKind::Choice | obj::PollKind::Ranking => {
                     for (i, opt) in c.options.iter().enumerate() {
-                        let mark = if c.kind == obj::PollKind::Ranking { format!("{}.", i + 1) } else { format!("{}.", (b'A' + (i % 26) as u8) as char) };
+                        let mark =
+                            if c.kind == obj::PollKind::Ranking { format!("{}.", i + 1) } else { format!("{}.", (b'A' + (i % 26) as u8) as char) };
                         text.push('\n');
                         text.push_str(&format!("{mark}  {opt}"));
                     }

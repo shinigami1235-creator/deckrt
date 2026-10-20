@@ -33,7 +33,8 @@ impl MfWriter {
         unsafe {
             // S_FALSE (already started on this thread) is fine; a different mode is not.
             let com = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
-            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET).map_err(err("Media Foundation didn't start (Windows N editions need the Media Feature Pack)"))?;
+            MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET)
+                .map_err(err("Media Foundation didn't start (Windows N editions need the Media Feature Pack)"))?;
             let out = (|| -> windows::core::Result<(IMFSinkWriter, u32, u32)> {
                 let mut attrs: Option<IMFAttributes> = None;
                 MFCreateAttributes(&mut attrs, 3)?;

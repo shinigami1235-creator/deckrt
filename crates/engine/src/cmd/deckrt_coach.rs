@@ -71,7 +71,12 @@ fn add_notes(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// The seconds a slide took in the kept rehearsal.
 pub fn pace_of(slide: &deckcraft_model::Slide) -> Option<f64> {
-    slide.tags.iter().find(|(n, _)| n.eq_ignore_ascii_case(PACE_TAG)).and_then(|(_, v)| v.trim().parse::<f64>().ok()).filter(|v| v.is_finite() && *v >= 0.0)
+    slide
+        .tags
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(PACE_TAG))
+        .and_then(|(_, v)| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v >= 0.0)
 }
 
 fn keep_pace(s: &mut Session, p: &Value) -> Result<Value> {
