@@ -272,7 +272,9 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   version's CHANGELOG.md section. The build makes the tag since this session's git connection
   can't push tags. Pushes to main make the `latest-build` pre-release,
   which `Update deckrt.bat` installs; its Help › About line carries the commit and date. The
-  MSI's MajorUpgrade allows downgrades, so the two can be installed over each other.
+  MSI's MajorUpgrade allows downgrades, so the two can be installed over each other. The MSI
+  installs `Update deckrt.bat` too, with a Start menu entry, and deckrt.exe's file version is
+  `<version>.<run number>` (`DECKRT_BUILD_NUMBER`, apps/deckcraft/build.rs).
 
 - Live sliders: a drag starts an engine interaction named `deckrt-live:<label>` (the canvas's
   drags use the same mechanism), runs the command at every step and ends it on release, so the

@@ -39,6 +39,8 @@ jobs:
       CRAFT_FONTS_REQUIRED: "1"
       # The exe's icon and version block must embed.
       DECKCRAFT_REQUIRE_WINRES: "1"
+      # The fourth number of deckrt.exe's file version, so every build's exe is newer than the last.
+      DECKRT_BUILD_NUMBER: ${{ github.run_number }}
       # Static C runtime: no Visual C++ redistributable needed on the target machine.
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
     steps:
@@ -192,7 +194,7 @@ jobs:
           $bin = (Resolve-Path "target\x86_64-pc-windows-msvc\release").Path
           $icon = (Resolve-Path "assets\app-icon\deckcraft.ico").Path
           New-Item -ItemType Directory -Force -Path dist\msi | Out-Null
-          wix build packaging\windows\deckrt.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -d "LicenseRtf=$((Resolve-Path 'packaging\windows\license.rtf').Path)" -d "Version=$msiVersion" -d "BinDir=$bin" -d "IconPath=$icon" -d "StartBat=$((Resolve-Path 'Start deckrt.bat').Path)" -o "dist\msi\deckrt-$version-windows-x64.msi"
+          wix build packaging\windows\deckrt.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -d "LicenseRtf=$((Resolve-Path 'packaging\windows\license.rtf').Path)" -d "Version=$msiVersion" -d "BinDir=$bin" -d "IconPath=$icon" -d "StartBat=$((Resolve-Path 'Start deckrt.bat').Path)" -d "UpdateBat=$((Resolve-Path 'Update deckrt.bat').Path)" -o "dist\msi\deckrt-$version-windows-x64.msi"
 
       - name: Upload the installer
         if: success() || failure()

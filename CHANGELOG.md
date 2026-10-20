@@ -6,6 +6,9 @@ in the test build so far.
 
 ## Unreleased
 
+- **Update deckrt in the Start menu.** The installer puts the updater in with the program, so the
+  one you run always matches the build. Each build's deckrt.exe also has its own version number
+  (Properties › Details).
 - **Sliders for picture and fill transparency**, and finer picture controls: Brightness,
   Contrast, Saturation, Transparency and Crop each have a slider and a number box, and the
   picture changes while you drag. Saturation is now kept when the deck is saved.
