@@ -133,6 +133,10 @@ fn f(p: &Value, k: &str) -> Option<f32> {
 }
 
 pub fn handle(app: &mut SlideApp, ctx: &egui::Context, req: &ControlRequest) -> Outcome {
+    // deckrt hook: AI Agents › Let agents work in this window decides who gets in.
+    if let Some(v) = crate::deckrt::agents::gate(app, &req.method) {
+        return Outcome::Done(v);
+    }
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     match req.method.as_str() {

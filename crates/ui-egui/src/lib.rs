@@ -225,6 +225,9 @@ pub struct Services {
     /// deckrt hook: a multi-select open dialog for a purpose (`pictures`, `model`) → paths in
     /// the order chosen, empty when cancelled.
     pub pick_open_many: Option<Box<dyn FnMut(&str) -> Vec<String>>>,
+    /// deckrt hook: start the loopback control server on a port while the app runs (AI Agents ›
+    /// Let agents work in this window); `Err` says why it couldn't.
+    pub start_control: Option<Box<dyn FnMut(u16, egui::Context) -> Result<std::sync::mpsc::Receiver<ControlRequest>, String>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -400,6 +403,7 @@ pub const UI_COMMANDS: &[(&str, &str, Option<&str>, &str)] = &[
     ("app.about", "About deckrt", None, "{}"),
     ("app.palette", "Command Palette", Some("Cmd+Shift+P"), "{}"),
     ("app.preferences", "Preferences…", Some("Cmd+,"), "{}"),
+    ("app.agents", "AI Agents…", None, "{}"), // deckrt hook: Claude and other agents make decks
     ("app.openDialog", "Open…", None, "{purpose?}"),
     ("app.insertPictureDialog", "Picture from File…", None, "{}"),
     ("app.smartArtPictureDialog", "Insert Picture in SmartArt…", None, "{id?, index}"),
@@ -1020,6 +1024,7 @@ impl SlideApp {
             "app.about" => self.dialog = Some(dialogs::Dialog::new("about")),
             "app.palette" => self.palette = Some((String::new(), 0)),
             "app.preferences" => self.dialog = Some(dialogs::Dialog::new("preferences")),
+            "app.agents" => self.dialog = Some(dialogs::Dialog::new(deckrt::agents::DIALOG)), // deckrt hook
             "app.openDialog" => self.pick_and_open(),
             "app.insertPictureDialog" => self.pick_and_insert("picture", "insert.picture"),
             "app.smartArtPictureDialog" => {

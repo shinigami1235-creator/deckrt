@@ -583,6 +583,7 @@ fn mcp(args: &[String]) -> Result<(), String> {
     use deckcraft_engine::file_access::{self, AutomationRoots};
     use deckcraft_mcp::{Backend, Headless, Remote, Server, control_addr};
     let mut connect: Option<String> = None;
+    let mut window: Option<String> = None; // deckrt: the open window when it lets agents in, else headless
     let mut sample = false;
     let mut roots_args = automation_args::AutomationArgs::new(None, None);
     let mut it = args.iter().cloned();
@@ -592,6 +593,7 @@ fn mcp(args: &[String]) -> Result<(), String> {
         }
         match a.as_str() {
             "--connect" => connect = Some(it.next().ok_or("--connect needs a port or host:port")?),
+            "--window" => window = Some(it.next().ok_or("--window needs a port")?),
             "--sample" => sample = true,
             "--help" | "-h" => {
                 outln!("{}", help_page("mcp"));
@@ -605,6 +607,14 @@ fn mcp(args: &[String]) -> Result<(), String> {
         return Err("--automation-read-root and --automation-write-root confine the in-process server; a running app is not confined by them, \
 so drop --connect (or use --connect without the roots)"
             .into());
+    }
+    if roots.is_some() && window.is_some() {
+        return Err("--window can move the work into the deckrt window, which the roots don't confine; drop one of them".into());
+    }
+    if let Some(w) = window {
+        let mut server = Server::new(Box::new(deckcraft_mcp::Window::new(&control_addr(&w))));
+        let stdin = std::io::stdin();
+        return server.serve(stdin.lock(), std::io::stdout()).map_err(|e| e.to_string());
     }
     let backend: Box<dyn Backend> = match connect {
         Some(c) => Box::new(Remote::connect(&control_addr(&c)).map_err(|e| format!("can't reach the app at {c}: {e}"))?),

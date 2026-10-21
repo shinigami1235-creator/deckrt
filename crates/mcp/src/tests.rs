@@ -23,7 +23,7 @@ fn tool(s: &mut Server, name: &str, args: Value) -> Value {
 fn handshake_and_tool_list() {
     let mut s = Server::new(Box::new(Headless::new()));
     let r = call(&mut s, 1, "initialize", json!({"protocolVersion": "2025-06-18"}));
-    assert_eq!(r["result"]["serverInfo"]["name"], "deckcraft");
+    assert_eq!(r["result"]["serverInfo"]["name"], "deckrt");
     let tools = call(&mut s, 2, "tools/list", json!({}));
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     for n in ["run_command", "render_slide", "add_slide", "add_shape", "pointer", "inspect_slide"] {

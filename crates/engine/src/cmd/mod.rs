@@ -5,6 +5,7 @@ pub mod arrange;
 pub mod artistic;
 pub mod background;
 pub mod compress;
+pub mod deckrt_agents; // deckrt: AI agents' settings
 pub mod deckrt_check; // deckrt: the check before a talk
 pub mod deckrt_coach; // deckrt: the pace kept from a rehearsal
 pub mod deckrt_fonts; // deckrt: Add Fonts // deckrt: PowerPoint's twenty WordArt styles
@@ -209,6 +210,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(deckrt_tidy::specs()); // deckrt hook
         v.extend(deckrt_sample::specs()); // deckrt hook
         v.extend(deckrt_fonts::specs()); // deckrt hook
+        v.extend(deckrt_agents::specs()); // deckrt hook
         v
     })
 }

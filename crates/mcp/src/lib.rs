@@ -16,14 +16,17 @@
 #![forbid(unsafe_code)]
 
 mod backend;
+mod deckrt_tools;
 mod headless;
 mod server;
 mod tools;
+mod window;
 
 pub use backend::{Backend, Remote};
 pub use headless::Headless;
 pub use server::{PROTOCOL_VERSION, Server};
 pub use tools::{ToolResult, call_tool, tool_definitions};
+pub use window::{PING, SHUT, Window};
 
 /// Default control-channel port of the desktop app.
 pub const DEFAULT_PORT: u16 = 7979;
@@ -33,5 +36,7 @@ pub fn control_addr(s: &str) -> String {
     if s.parse::<u16>().is_ok() { format!("127.0.0.1:{s}") } else { s.to_string() }
 }
 
+#[cfg(test)]
+mod deckrt_tests;
 #[cfg(test)]
 mod tests;

@@ -18,14 +18,19 @@ const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
 const RESOURCE_NOT_FOUND: i64 = -32002;
 
-const INSTRUCTIONS: &str = "DeckCraft is a presentation app (a PowerPoint clone). Coordinates are points on the \
-current slide (y down; the default 16:9 slide is 960×540). Every action is a command: find ids and parameters with \
-list_commands and run them with run_command (or several with batch). Typical flow: new_presentation → add_slide \
-{layout:\"titleAndContent\", title, body} → add_shape / add_text_box / insert_picture / insert_chart → \
-inspect_slide to read back ids, boxes and text → render_slide to look at the result. Shape ids are looked up on the \
-current slide. An inserted shape is selected; run_command edit.select {ids:[…]} selects others. format.* acts on \
-the selected text or shapes; shape.fill, shape.line and the other shape commands whose parameters list `ids` act on \
-those shapes, else on the selected ones. Save with save_presentation (.deckcraft or .pptx).";
+const INSTRUCTIONS: &str = "deckrt is a presentation app (a PowerPoint replacement, a fork of DeckCraft) whose decks \
+can hold live objects the audience and presenter use during the talk. Coordinates are points on the current slide \
+(y down; the default 16:9 slide is 960×540). Typical flow: new_presentation → add_slide {layout, title, body} → \
+add_shape / add_text_box / insert_picture / insert_chart → inspect_slide to read back ids, boxes and text → \
+render_slide to look at the result → set_notes for the speaker's script → save_presentation (.pptx or \
+.deckcraft). Live objects: add_poll (phones vote, word cloud, rating, ranking), add_popup (a labelled button \
+that opens a note), add_image_swap (pictures in one frame, one at a time), add_wipe (before/after under a \
+divider), add_scrub (2-12 pictures on a slider), add_zoom (click to zoom into part of the slide), add_3d_model, \
+add_measure (facial thirds, fifths, angle, ratio over a photo), add_injection_map (dose points and arrows over a \
+photo); give the photo's id as `over` to cover it. A poll suits the end of a teaching section; put popups beside \
+a diagram; an image swap or scrub for stages. Render each slide you change. Everything else is a command: \
+list_commands and run_command (or batch); format.* acts on the selection, shape.* commands take `ids`. Objects \
+are kept when saved as .pptx and as .deckcraft.";
 
 /// Resource URIs.
 pub const DOC_URI: &str = "deckcraft://document";

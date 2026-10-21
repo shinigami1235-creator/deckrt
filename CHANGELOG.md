@@ -6,6 +6,10 @@ in the test build so far.
 
 ## Unreleased
 
+- **AI agents make decks in deckrt.** Help › AI Agents adds deckrt to Claude Desktop in one
+  click, or copies the settings for Claude Code, Cursor and other agents. An agent can add polls,
+  popups, image swaps, wipes, scrubs, zoom regions, 3D models, measurements, injection maps and
+  speaker notes, and with Let agents work in this window ticked you watch it build the deck.
 - **Phones show the slide as it is on the screen.** An opened popup, a measurement, the picture
   a swap is on, injection points and drawings all reach the phones, in presenter view on one
   screen too. An image swap no longer shows its pictures stacked on the phones.

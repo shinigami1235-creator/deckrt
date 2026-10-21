@@ -51,6 +51,27 @@ drop the .ttf, .otf or .zip file on deckrt's window. It goes into your own fonts
 Windows' Install and the Mac's Font Book use, so Word and PowerPoint get it too. Remove it the
 usual way: Settings › Personalization › Fonts on Windows, Font Book on a Mac.
 
+## AI agents
+
+Claude Desktop, Claude Code, Cursor and other AI agents can make and edit decks in deckrt through
+its MCP server, polls, popups, image swaps and the other live objects included. Open **Help › AI
+Agents** (or File › Options › AI Agents…):
+
+- **Add to Claude Desktop** puts deckrt in Claude Desktop's settings. Only the `deckrt` entry
+  changes, and the file as it was is kept beside it as `claude_desktop_config.json.before-deckrt`.
+  Quit Claude Desktop and open it again to load it.
+- **Copy for Claude Code** copies the `claude mcp add` line to paste in a terminal.
+- **Copy settings** copies the `mcpServers` settings for Cursor and other agents.
+
+With **Let agents work in this window** ticked, an agent's changes show up in the open window as
+it makes them. While it's on, any program on the computer can control deckrt through
+127.0.0.1:7979, so it stays off until you tick it and goes off when deckrt closes. With it off,
+agents build decks on their own and save them as files, and `open_in_deckrt` moves one into the
+window later.
+
+The server is `deckcraft-cli mcp --window 7979`, installed beside deckrt (inside deckrt.app on a
+Mac).
+
 ## What deckrt adds
 
 - Interactive objects on the slide: a 3D model, an image swap, a before-and-after wipe, a zoom

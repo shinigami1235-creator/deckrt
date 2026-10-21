@@ -46,15 +46,21 @@ impl Default for Limits {
 }
 
 pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
+    try_start(port, ctx).unwrap_or_else(|e| {
+        log::error!("{e}");
+        sync_channel::<ControlRequest>(0).1
+    })
+}
+
+/// deckrt: [`start`] that says when the port can't be had (AI Agents › Let agents work in this
+/// window starts it while deckrt runs).
+pub fn try_start(port: u16, ctx: egui::Context) -> Result<Receiver<ControlRequest>, String> {
     match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => {
             log::info!("control server listening on 127.0.0.1:{port}");
-            serve_listener(l, Limits::default(), ctx)
+            Ok(serve_listener(l, Limits::default(), ctx))
         }
-        Err(e) => {
-            log::error!("control server failed to bind 127.0.0.1:{port}: {e}");
-            sync_channel::<ControlRequest>(0).1
-        }
+        Err(e) => Err(format!("control server failed to bind 127.0.0.1:{port}: {e}")),
     }
 }
 

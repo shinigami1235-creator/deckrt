@@ -20,6 +20,8 @@ fn skipped(id: &str) -> bool {
         | "deckrt.openSample"
         // deckrt hook: Add Fonts writes into the user fonts folder.
         | "font.install"
+        // deckrt hook: writes Claude Desktop's settings file.
+        | "deckrt.addToClaudeDesktop"
     ) || id.starts_with("window.")
         || id.starts_with("show.")
         || id.starts_with("media.")

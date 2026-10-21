@@ -60,10 +60,10 @@ fn tool(name: &str, title: &str, desc: &str, schema: Value, read_only: bool) -> 
     json!({"name": name, "title": title, "description": desc, "inputSchema": schema, "annotations": {"title": title, "readOnlyHint": read_only, "openWorldHint": false}})
 }
 
-const APP_ONLY: &str = " Desktop app only (`deckcraft-cli mcp --connect PORT`).";
+const APP_ONLY: &str = " Only while working in the deckrt window (deckrt open with File › Options › AI Agents › Let agents work in this window on).";
 
 pub fn tool_definitions() -> Vec<Value> {
-    vec![
+    let mut v = vec![
         tool(
             "list_commands",
             "List commands",
@@ -279,7 +279,7 @@ pub fn tool_definitions() -> Vec<Value> {
             obj(json!({"text": string("Text")}), &["text"]),
             false,
         ),
-        tool("screenshot", "Screenshot", &format!("Screenshot of the whole DeckCraft window (UI included).{APP_ONLY}"), obj(json!({}), &[]), true),
+        tool("screenshot", "Screenshot", &format!("Screenshot of the whole deckrt window (UI included).{APP_ONLY}"), obj(json!({}), &[]), true),
         tool(
             "call_app",
             "Call app method",
@@ -287,7 +287,9 @@ pub fn tool_definitions() -> Vec<Value> {
             obj(json!({"method": string("Method"), "params": {"type": "object"}}), &["method"]),
             false,
         ),
-    ]
+    ];
+    v.extend(crate::deckrt_tools::definitions()); // deckrt hook: the interactive objects and notes
+    v
 }
 
 fn exec(b: &mut dyn Backend, cmd: &str, params: Value) -> Result<Value, String> {
@@ -335,6 +337,9 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, a: &Value) -> ToolResult {
     let a = if a.is_object() { a.clone() } else { json!({}) };
     if let Some(msg) = unknown_argument_error(name, &a) {
         return ToolResult::error(msg);
+    }
+    if crate::deckrt_tools::handles(name) {
+        return crate::deckrt_tools::call(b, name, &a); // deckrt hook
     }
     match name {
         "list_commands" => wrap(b.call("engine.commands", json!({})).map(|v| {

@@ -71,7 +71,7 @@ jobs:
         working-directory: deckrt
         run: |
           set -o pipefail
-          if ! cargo build --release --locked -p deckcraft --target aarch64-apple-darwin --target x86_64-apple-darwin 2>&1 | tee build.log; then
+          if ! cargo build --release --locked -p deckcraft -p deckcraft-cli --target aarch64-apple-darwin --target x86_64-apple-darwin 2>&1 | tee build.log; then
             grep -n -A8 '^error' build.log | head -120 | awk 'BEGIN{RS="--\n"} {gsub(/\n/," | "); print "::error::" $0}' | head -10
             exit 1
           fi
@@ -101,6 +101,9 @@ jobs:
           lipo -create -output "$app/Contents/MacOS/deckrt" \
             target/aarch64-apple-darwin/release/deckrt target/x86_64-apple-darwin/release/deckrt
           lipo -info "$app/Contents/MacOS/deckrt"
+          # The MCP server AI agents start (Help › AI Agents), beside the app's own program.
+          lipo -create -output "$app/Contents/MacOS/deckcraft-cli" \
+            target/aarch64-apple-darwin/release/deckcraft-cli target/x86_64-apple-darwin/release/deckcraft-cli
           cp assets/app-icon/deckcraft.icns "$app/Contents/Resources/deckrt.icns"
           sed -e "s/@VERSION@/$DECKRT_VERSION/g" -e "s/@SHORT_VERSION@/$short/g" -e "s/@BUILD_SHA@/$GITHUB_SHA/g" \
             packaging/macos-deckrt/Info.plist.in > "$app/Contents/Info.plist"
@@ -109,6 +112,7 @@ jobs:
           cp LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$app/Contents/Resources/"
           # Ad hoc: no Developer ID. The hardened runtime with the microphone entitlement, so
           # Live Captions and Record can ask for it.
+          codesign --force --sign - --options runtime --timestamp=none "$app/Contents/MacOS/deckcraft-cli"
           codesign --force --sign - --options runtime --timestamp=none \
             --entitlements packaging/macos-deckrt/entitlements.plist "$app"
           codesign --verify --strict --verbose=2 "$app"

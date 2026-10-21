@@ -21,8 +21,8 @@ impl Default for Headless {
 }
 
 /// Hint appended to errors for methods that need a window.
-pub(crate) const NEEDS_APP: &str = "it needs the desktop app: start `deckcraft --control 7979` and run the MCP server \
-with `deckcraft-cli mcp --connect 7979`";
+pub(crate) const NEEDS_APP: &str = "it needs the deckrt window: open deckrt, turn on File › Options › AI Agents › \
+Let agents work in this window, then call use_window";
 
 fn s<'a>(p: &'a Value, k: &str) -> Option<&'a str> {
     p.get(k).and_then(Value::as_str)

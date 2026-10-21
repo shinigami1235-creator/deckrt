@@ -152,6 +152,10 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
 | `crates/ui-egui/src/show.rs` (round 9) | show keys leave a focused text box alone (`deckrt::show::typing`); Esc only leaves the box |
 | `crates/ui-egui/src/show.rs` (round 9) | the show toolbar's Presenter View button (`deckrt::show::presenter_view_now`), and `TOOL_BAR_W` is 640 to fit it |
 | `crates/ui-egui/src/show.rs` (round 10) | `draw_audience` also gets the slide's texture, so it can draw the phones' copy of the slide; `strokes` is `pub(crate)` and `in_transition()` says whether a transition is playing (no copy then) |
+| `crates/mcp/src/` (round 11) | `tools.rs` lists and runs `deckrt_tools` (the live objects, notes, `open_in_deckrt`) after its own tools; `server.rs` instructions describe deckrt; `backend.rs` `Backend::use_window` (default: an error) and deckrt in the messages; `headless.rs` `NEEDS_APP` names AI Agents; `tests.rs` expects the server name deckrt (it failed since the rename) |
+| `apps/deckcraft-cli/src/main.rs`, `help.rs` (round 11) | `mcp --window PORT` runs the `Window` backend |
+| `apps/deckcraft/src/main.rs`, `control_server.rs` (round 11) | `Services::start_control` is `control_server::try_start`, which says when the port is taken |
+| `crates/ui-egui/src/lib.rs`, `control.rs`, `dialogs.rs`, `menus.rs` (round 11) | `Services::start_control`; `app.agents` opens AI Agents (Help menu, the palette, and a button in Preferences); `control::handle` asks `deckrt::agents::gate` first |
 | `crates/ui-egui/src/dialogs.rs` (round 9) | About's Contributors and Models tabs sit in a box of their own (their header was drawn over the tab row) and About has Close only |
 | `crates/ui-egui/src/browsetheme_tests.rs`, `font_dialog_tests.rs`, `paragraph_dialog_tests.rs`, `replacefonts_tests.rs` (round 9) | reach Browse for Themes, Font, Paragraph and Replace Fonts the new way |
 | `apps/deckcraft/src/main.rs` (round 3) | `app.deckrt.settings_dir` so captions keep their settings and model files in the settings folder |
@@ -326,6 +330,19 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   pane's floating scroll bar, which takes the pointer along the right edge.
 - Dialog OK on Enter only when no text box has the keys: the SmartArt dialog's Enter used to
   insert the graphic while typing its items.
+
+- AI agents (round 11). `deckcraft-cli mcp --window 7979` decides at the first call: the open
+  deckrt window if it answers `deckrt.ping`, otherwise a headless session; `open_in_deckrt` moves
+  a headless deck across with `file.saveBytes` and `file.openBytes`. The decision waits for the
+  first call because Claude Desktop starts its servers when it opens, often before deckrt. The
+  window listens on 7979 only after Let agents work in this window is ticked (one listener for
+  the run); unticked, `deckrt::agents::gate` refuses every request with `deckcraft_mcp::SHUT`,
+  which the server reads as "headless". Add to Claude Desktop is an engine command
+  (`deckrt.addToClaudeDesktop`) that only replaces `mcpServers.deckrt`, refuses a file it can't
+  parse, and keeps the first original as `.before-deckrt`. On Windows the Microsoft Store copy of
+  Claude keeps its settings under `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude`, which
+  is used when it exists.
+
 
 ## PowerPoint feel: next run
 

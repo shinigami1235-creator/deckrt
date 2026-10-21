@@ -19,9 +19,13 @@ pub trait Backend {
     fn has_ui(&self) -> bool;
     /// Short human description ("headless", "connected to 127.0.0.1:7979").
     fn describe(&self) -> String;
+    /// deckrt hook: move the work into the open deckrt window (see [`crate::Window`]).
+    fn use_window(&mut self) -> Result<Value, String> {
+        Err("this server was started without a deckrt window to move to (start it with `mcp --window 7979`)".into())
+    }
 }
 
-/// A running DeckCraft app, reached through its loopback control port.
+/// A running deckrt app, reached through its loopback control port.
 pub struct Remote {
     addr: String,
     conn: Option<(BufReader<TcpStream>, TcpStream)>,
@@ -127,13 +131,13 @@ impl Backend for Remote {
             self.conn = None;
             self.send(&line).map_err(|e| {
                 self.conn = None;
-                format!("DeckCraft app at {} is not reachable: {e}", self.addr)
+                format!("the deckrt window at {} is not reachable: {e}", self.addr)
             })?;
         }
         self.receive(id).map_err(|e| {
             self.conn = None;
             format!(
-                "lost the reply from the DeckCraft app at {} ({e}); the command may or may not have run, check the document before retrying",
+                "lost the reply from the deckrt window at {} ({e}); the command may or may not have run, check the document before retrying",
                 self.addr
             )
         })?
@@ -144,7 +148,7 @@ impl Backend for Remote {
     }
 
     fn describe(&self) -> String {
-        format!("connected to the DeckCraft app at {}", self.addr)
+        format!("working in the deckrt window at {}", self.addr)
     }
 }
 

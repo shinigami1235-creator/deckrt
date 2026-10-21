@@ -2160,6 +2160,10 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                     *d = Dialog::new("autocorrect");
                 }
             });
+            // deckrt hook: AI agents that make and edit decks.
+            if ui.button("AI Agents…").on_hover_text("Let Claude and other AI agents make decks in deckrt").clicked() {
+                *d = Dialog::new(crate::deckrt::agents::DIALOG);
+            }
             if d.id != "preferences" {
                 return false;
             }

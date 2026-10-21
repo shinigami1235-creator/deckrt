@@ -2,6 +2,7 @@
 //! egui app lives under this module; the upstream files only call into it (see
 //! `UPSTREAM_HOOKS.md`).
 
+pub mod agents;
 pub mod canvas;
 pub mod captions;
 pub mod check;
@@ -124,6 +125,8 @@ pub struct State {
     pub prefs: Option<prefs::Prefs>,
     /// A live slider was dragged this frame (see `format_picture::end_frame`).
     pub live_touched: bool,
+    /// AI Agents: whether agents may work in this window.
+    pub agents: agents::State,
 }
 
 impl State {
@@ -342,6 +345,7 @@ fn pick_many(app: &mut SlideApp, purpose: &str) -> Vec<String> {
 pub fn dialog_title(id: &str) -> &'static str {
     match id {
         "deckrt.imported" => "Interactive objects brought in",
+        agents::DIALOG => "AI Agents",
         check::DIALOG => check::title(),
         captions::DIALOG => captions::title(),
         coach::DIALOG => coach::title(),
@@ -361,6 +365,7 @@ pub fn dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut crate::dialogs::Dialog) -
         finder::DIALOG => finder::body(app, ui),
         video::DIALOG => video::body(app, ui),
         privacy::DIALOG => check::body(app, ui, d),
+        agents::DIALOG => agents::body(app, ui),
         "deckrt.imported" => {
             let text = d.params.get("text").and_then(Value::as_str).unwrap_or("").to_string();
             ui.set_max_width(460.0);

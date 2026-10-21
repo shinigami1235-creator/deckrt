@@ -126,10 +126,12 @@ and prints its answer as JSON. COMMAND [PARAMS] runs a command, as run --cmd doe
     },
     Subcommand {
         name: "mcp",
-        usage: "mcp [--connect PORT] [--sample] [--automation-read-root DIR] [--automation-write-root DIR]",
+        usage: "mcp [--window PORT | --connect PORT] [--sample] [--automation-read-root DIR] [--automation-write-root DIR]",
         summary: "serve the commands to an agent over MCP on stdio",
         details: "Runs a Model Context Protocol server on stdin and stdout. It works on its own presentation without a
-window, or with --connect PORT (or host:port) on the DeckCraft app started with --control PORT.
+window, or with --connect PORT (or host:port) on the deckrt app started with --control PORT. With --window
+PORT it works in the open deckrt window when deckrt lets agents in (AI Agents › Let agents work in this
+window, which listens on PORT), and on its own presentation otherwise; this is what AI Agents › Copy sets up.
 --sample opens the sample presentation.
 
 --automation-read-root DIR and --automation-write-root DIR confine every file the agent's commands read
