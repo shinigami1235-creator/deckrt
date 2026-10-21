@@ -54,8 +54,8 @@ usual way: Settings › Personalization › Fonts on Windows, Font Book on a Mac
 ## AI agents
 
 Claude Desktop, Claude Code, Cursor and other AI agents can make and edit decks in deckrt through
-its MCP server, polls, popups, image swaps and the other live objects included. Open **Help › AI
-Agents** (or File › Options › AI Agents…):
+its MCP server, polls, popups, image swaps and the other live objects included. Open **File ›
+Options › AI Agents…** (or type AI Agents in the command palette, Ctrl+Shift+P):
 
 - **Add to Claude Desktop** puts deckrt in Claude Desktop's settings. Only the `deckrt` entry
   changes, and the file as it was is kept beside it as `claude_desktop_config.json.before-deckrt`.

@@ -6,7 +6,7 @@ in the test build so far.
 
 ## Unreleased
 
-- **AI agents make decks in deckrt.** Help › AI Agents adds deckrt to Claude Desktop in one
+- **AI agents make decks in deckrt.** File › Options › AI Agents adds deckrt to Claude Desktop in one
   click, or copies the settings for Claude Code, Cursor and other agents. An agent can add polls,
   popups, image swaps, wipes, scrubs, zoom regions, 3D models, measurements, injection maps and
   speaker notes, and with Let agents work in this window ticked you watch it build the deck.

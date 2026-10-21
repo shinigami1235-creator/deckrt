@@ -1,4 +1,4 @@
-//! deckrt: Help › AI Agents (also File › Options › AI Agents…). Adds deckrt's MCP server
+//! deckrt: File › Options › AI Agents… (also the Help menu on a Mac and the command palette). Adds deckrt's MCP server
 //! (`deckcraft-cli mcp --window 7979`) to Claude Desktop, or copies what Claude Code, Cursor and
 //! other agents need, and lets agents work in this window: the window listens on 127.0.0.1:7979
 //! while the box is ticked, and refuses every request while it isn't.
@@ -33,7 +33,7 @@ pub struct State {
 pub fn gate(app: &SlideApp, method: &str) -> Option<Value> {
     let a = &app.deckrt.agents;
     if a.listening && !a.allowed {
-        return Some(json!({"ok": false, "error": format!("{SHUT}. Turn on Help › AI Agents › Let agents work in this window.")}));
+        return Some(json!({"ok": false, "error": format!("{SHUT}. Turn on File › Options › AI Agents › Let agents work in this window.")}));
     }
     (method == PING).then(|| json!({"ok": true, "result": {"app": "deckrt", "version": env!("CARGO_PKG_VERSION")}}))
 }
