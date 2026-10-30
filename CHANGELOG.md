@@ -6,6 +6,9 @@ in the test build so far.
 
 ## Unreleased
 
+- **More ways for a 3D model to move.** Besides spinning and swaying, a model can wobble,
+  bounce, breathe, beat like a heart or show off like a product on a stand; grow, spin or drop
+  in as the slide opens; and turn away, hop, grow or speed up when the pointer comes near.
 - **Update deckrt says what it installed.** It names the build it downloads, never reuses an
   earlier download, and says when the update is done, cancelled or stopped with an error (with
   the installer's log in the temp folder).

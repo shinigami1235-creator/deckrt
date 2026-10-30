@@ -205,6 +205,8 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
         .filter_map(|s| obj::read_any(s).map(|o| (s.clone(), o, deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, s))))
         .collect();
     let ppp = ui.ctx().pixels_per_point();
+    // A model's motion starts again (entrance and all) each time it is selected.
+    app.deckrt.motion.retain(|id, _| selected.contains(id));
     for (sh, o, x) in items {
         let rect = screen_rect(xf, &x);
         if sh.hidden {
@@ -220,9 +222,9 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
                 l.step(&c.motion, now, rect, ui.input(|i| i.pointer.hover_pos()));
                 l.clone()
             });
-            let rect = if live.is_some() { super::motion::floated(&c.motion, now, rect) } else { rect };
+            let rect = live.as_ref().map_or(rect, |l| l.place(&c.motion, now, rect));
             if let Some(l) = &live
-                && l.moving(&c.motion)
+                && l.moving(&c.motion, now)
             {
                 turning = true;
                 ui.ctx().request_repaint();

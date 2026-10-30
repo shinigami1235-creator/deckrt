@@ -335,6 +335,8 @@ impl Ext {
             self.pointer = None;
             self.ink.clear();
             self.changed_at = f64::MAX;
+            // A model's entrance plays again each time its slide comes up.
+            self.motion.clear();
         }
         for it in objects_on(doc, idx) {
             self.states.entry(it.key()).or_insert_with(|| ObjectState::initial(&it.obj));
@@ -517,9 +519,9 @@ pub fn draw(
                     l.step(&c.motion, now, rect, ctx.input(|i| i.pointer.hover_pos()));
                     l.clone()
                 });
-                let rect = super::motion::floated(&c.motion, now, rect);
+                let rect = live.as_ref().map_or(rect, |l| l.place(&c.motion, now, rect));
                 if let Some(l) = &live
-                    && l.moving(&c.motion)
+                    && l.moving(&c.motion, now)
                 {
                     turning = true;
                     ctx.request_repaint();

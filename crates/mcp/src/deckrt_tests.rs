@@ -207,4 +207,12 @@ fn an_agent_sets_a_models_own_motion() {
     // Left out, it stays still.
     let still = tool(&mut s, "add_3d_model", json!({"model": {"data": obj, "name": "triangle.obj"}}));
     assert_eq!(still["object"]["config"]["motion"]["mode"], "none");
+    let heart = tool(
+        &mut s,
+        "add_3d_model",
+        json!({"model": {"data": obj, "name": "triangle.obj"}, "motion": "heartbeat", "entrance": "drop", "hover": "hop"}),
+    );
+    let motion = &heart["object"]["config"]["motion"];
+    assert_eq!((motion["mode"].as_str(), motion["entrance"].as_str(), motion["hover"].as_str()), (Some("heartbeat"), Some("drop"), Some("hop")));
+    assert_eq!(motion["seconds"], 1.0, "a heartbeat's own pace");
 }

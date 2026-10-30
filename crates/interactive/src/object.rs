@@ -150,32 +150,44 @@ pub struct ModelConfig {
     pub motion: Motion,
 }
 
-/// What a 3D model does by itself in the show: spin or sway about one of its axes, float up and
-/// down, and react when the pointer comes near it. All off by default.
+/// What a 3D model does by itself in the show: a motion that repeats (spin, sway, wobble,
+/// bounce, breathe, beat, show off), a float, an entrance when the slide opens, and a reaction
+/// when the pointer comes near. All off by default.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Motion {
     pub mode: MotionMode,
     pub axis: MotionAxis,
-    /// Seconds for one full turn (spin) or one swing there and back (sway), 1 to 120.
+    /// Seconds for one round of the motion (a turn, a swing, a bounce, a breath, a beat), 0.3
+    /// to 120.
     pub seconds: f64,
     /// The other way round.
     pub reverse: bool,
     /// Rises and sinks gently.
     pub float: bool,
+    /// What it does as the slide opens.
+    pub entrance: Entrance,
     pub hover: Hover,
 }
 
 impl Default for Motion {
     fn default() -> Self {
-        Motion { mode: MotionMode::None, axis: MotionAxis::Turn, seconds: 12.0, reverse: false, float: false, hover: Hover::None }
+        Motion {
+            mode: MotionMode::None,
+            axis: MotionAxis::Turn,
+            seconds: 12.0,
+            reverse: false,
+            float: false,
+            entrance: Entrance::None,
+            hover: Hover::None,
+        }
     }
 }
 
 impl Motion {
-    /// Something moves (by itself or near the pointer).
+    /// Something moves (by itself, as the slide opens or near the pointer).
     pub fn is_on(&self) -> bool {
-        self.mode != MotionMode::None || self.float || self.hover != Hover::None
+        self.mode != MotionMode::None || self.float || self.entrance != Entrance::None || self.hover != Hover::None
     }
 }
 
@@ -188,6 +200,49 @@ pub enum MotionMode {
     Spin,
     /// Back and forth, 30° either way.
     Sway,
+    /// Tips round in a circle, like a coin settling.
+    Wobble,
+    /// Hops up and down.
+    Bounce,
+    /// Grows and shrinks a little, slowly.
+    Breathe,
+    /// Two quick beats and a rest, like a heart.
+    Heartbeat,
+    /// Turns round while nodding a little, like a product on a stand.
+    Showcase,
+}
+
+impl MotionMode {
+    /// The seconds one round takes when the motion is first picked.
+    pub fn default_seconds(self) -> f64 {
+        match self {
+            MotionMode::None | MotionMode::Spin => 12.0,
+            MotionMode::Sway => 4.0,
+            MotionMode::Wobble => 3.0,
+            MotionMode::Bounce => 1.2,
+            MotionMode::Breathe => 4.0,
+            MotionMode::Heartbeat => 1.0,
+            MotionMode::Showcase => 14.0,
+        }
+    }
+    /// Whether the axis applies.
+    pub fn has_axis(self) -> bool {
+        matches!(self, MotionMode::Spin | MotionMode::Sway)
+    }
+}
+
+/// What a model does as its slide opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Entrance {
+    #[default]
+    None,
+    /// Grows from nothing, a little past its size and back.
+    Grow,
+    /// One turn that slows to a stop.
+    Spin,
+    /// Falls in from above and bounces to rest.
+    Drop,
 }
 
 /// The axis, named as the starting turn's fields are: Turn goes round the model's up axis, Nod
@@ -222,7 +277,15 @@ pub enum Hover {
     Jiggle,
     /// Turns a little towards the pointer.
     Follow,
-    /// Stops spinning or swaying while the pointer is on it.
+    /// Turns a little away from the pointer.
+    Shy,
+    /// Hops once as the pointer arrives.
+    Hop,
+    /// Grows a little while the pointer is near.
+    Grow,
+    /// Its motion runs three times as fast while the pointer is near.
+    Faster,
+    /// Stops its motion while the pointer is on it.
     Pause,
 }
 
@@ -580,7 +643,7 @@ impl InteractiveObject {
         let finite = |v: f64, d: f64| if v.is_finite() { v } else { d };
         match &mut self.config {
             Config::Model(c) => {
-                c.motion.seconds = finite(c.motion.seconds, 12.0).clamp(1.0, 120.0);
+                c.motion.seconds = finite(c.motion.seconds, 12.0).clamp(0.3, 120.0);
                 c.layers.truncate(10_000);
                 c.hidden_layers.retain(|h| c.layers.contains(h));
                 for r in &mut c.initial_rotation {
@@ -757,7 +820,7 @@ mod tests {
         let o = InteractiveObject::from_json(new).expect("model with motion");
         let Config::Model(c) = &o.config else { panic!("model") };
         assert_eq!((c.motion.mode, c.motion.axis, c.motion.hover), (MotionMode::Spin, MotionAxis::Tilt, Hover::Jiggle));
-        assert_eq!(c.motion.seconds, 1.0, "held to one second a turn");
+        assert_eq!(c.motion.seconds, 0.3, "held to 0.3 s a round");
         let back = InteractiveObject::from_json(&o.to_json()).expect("again");
         assert_eq!(back, o);
     }

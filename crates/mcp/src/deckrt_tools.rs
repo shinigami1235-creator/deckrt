@@ -174,19 +174,20 @@ pub fn definitions() -> Vec<Value> {
         tool(
             "add_3d_model",
             "Add 3D model",
-            "A 3D model (.glb, .obj or .stl) the presenter turns by dragging and zooms with the wheel. Each press of the shortcut takes the next layer off (the file's top-level parts). It can also move by itself in the show: spin or sway about an axis, float, and jiggle, turn to the pointer or stop when the pointer comes near.",
+            "A 3D model (.glb, .obj or .stl) the presenter turns by dragging and zooms with the wheel. Each press of the shortcut takes the next layer off (the file's top-level parts). It can also move by itself in the show (spin, sway, wobble, bounce, breathe, beat like a heart, show off on a stand), float, make an entrance as the slide opens (grow, spin or drop in), and react when the pointer comes near (jiggle, turn to it or away, hop, grow, speed up, stop).",
             obj(
                 common(
                     props(json!({
                         "model": picture("The model file (path or base64)"),
                         "hidden_layers": {"type": "array", "items": {"type": "string"}, "description": "Layer names hidden when the slide opens"},
                         "link_group": string("Models on one slide with the same name turn together"),
-                        "motion": {"type": "string", "enum": ["none", "spin", "sway"], "description": "Moves by itself: round and round, or back and forth 30° (default none)"},
-                        "axis": {"type": "string", "enum": ["turn", "nod", "tilt"], "description": "turn: round its up axis (turntable); nod: tips forward and back; tilt: rolls like a wheel facing the viewer (default turn)"},
-                        "seconds": num("Seconds for one turn or one swing, 1 to 120 (default 12)"),
+                        "motion": {"type": "string", "enum": ["none", "spin", "sway", "wobble", "bounce", "breathe", "heartbeat", "showcase"], "description": "Moves by itself (default none): spin round, sway back and forth 30°, wobble like a settling coin, bounce, breathe (grows and shrinks slowly), heartbeat (two quick beats and a rest, good for a heart model), showcase (turns and nods like a product on a stand)"},
+                        "axis": {"type": "string", "enum": ["turn", "nod", "tilt"], "description": "For spin and sway. turn: round its up axis (turntable); nod: tips forward and back; tilt: rolls like a wheel facing the viewer (default turn)"},
+                        "seconds": num("Seconds for one round of the motion, 0.3 to 120 (default: 12 for a spin, 1 for a heartbeat, 1.2 for a bounce)"),
+                        "entrance": {"type": "string", "enum": ["none", "grow", "spin", "drop"], "description": "As the slide opens: grows in, spins in or drops in (default none)"},
                         "reverse": boolean("The other way round"),
                         "float": boolean("Rises and sinks gently"),
-                        "hover": {"type": "string", "enum": ["none", "jiggle", "follow", "pause"], "description": "When the pointer comes near: jiggle, follow (turns towards it) or pause the motion (default none)"}
+                        "hover": {"type": "string", "enum": ["none", "jiggle", "follow", "shy", "hop", "grow", "faster", "pause"], "description": "When the pointer comes near (default none): jiggle, follow (turns towards it), shy (turns away), hop once, grow a little, faster (motion speeds up) or pause the motion"}
                     })),
                     false,
                 ),
@@ -443,13 +444,27 @@ fn run(b: &mut dyn Backend, name: &str, a: &Value) -> Result<Value, String> {
                 config["link_group"] = json!(g);
             }
             let mut motion = json!({});
-            for (k, key) in [("motion", "mode"), ("axis", "axis"), ("hover", "hover")] {
+            for (k, key) in [("motion", "mode"), ("axis", "axis"), ("hover", "hover"), ("entrance", "entrance")] {
                 if let Some(v) = s(k) {
                     motion[key] = json!(v);
                 }
             }
-            if let Some(v) = f(a, "seconds") {
-                motion["seconds"] = json!(v);
+            let picked = motion.get("mode").and_then(Value::as_str).map(str::to_string);
+            match f(a, "seconds") {
+                Some(v) => motion["seconds"] = json!(v),
+                // The seconds that suit the motion, as picking it in deckrt sets them.
+                None => {
+                    if let Some(mode) = picked {
+                        motion["seconds"] = json!(match mode.as_str() {
+                            "sway" | "breathe" => 4.0,
+                            "wobble" => 3.0,
+                            "bounce" => 1.2,
+                            "heartbeat" => 1.0,
+                            "showcase" => 14.0,
+                            _ => 12.0,
+                        });
+                    }
+                }
             }
             for k in ["reverse", "float"] {
                 if let Some(v) = a.get(k).and_then(Value::as_bool) {

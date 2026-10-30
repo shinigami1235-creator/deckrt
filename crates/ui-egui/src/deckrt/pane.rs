@@ -179,7 +179,11 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
             }
             hint(ui, "Drag the round handle on the slide to turn the model; use the wheel to zoom.");
             ui.add_space(4.0);
-            changed |= motion_settings(ui, &mut c.motion);
+            if motion_settings(ui, &mut c.motion) {
+                // Played again from the start, entrance and all.
+                app.deckrt.motion.remove(&id);
+                changed = true;
+            }
         }
         Config::ImageSwap(c) => {
             label(ui, "Pictures");
@@ -871,36 +875,61 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
 
 /// deckrt: a 3D model's own motion: spin or sway, float, and what it does near the pointer.
 fn motion_settings(ui: &mut Ui, m: &mut deckcraft_interactive::object::Motion) -> bool {
-    use deckcraft_interactive::object::{Hover, MotionAxis, MotionMode};
+    use deckcraft_interactive::object::{Entrance, Hover, MotionAxis, MotionMode};
     let mut changed = false;
-    label(ui, "Moves by itself");
-    ui.horizontal_wrapped(|ui| {
-        for (v, name) in [(MotionMode::None, "No"), (MotionMode::Spin, "Spins"), (MotionMode::Sway, "Sways")] {
-            if ui.selectable_label(m.mode == v, name).clicked() && m.mode != v {
-                m.mode = v;
-                changed = true;
-            }
-        }
-    });
-    if m.mode != MotionMode::None {
+    // One row of choices; returns whether one was picked.
+    fn pick<T: PartialEq + Copy>(ui: &mut Ui, cur: &mut T, choices: &[(T, &str)]) -> bool {
+        let mut picked = false;
         ui.horizontal_wrapped(|ui| {
-            ui.label("Around");
-            for (v, name) in [(MotionAxis::Turn, "Turn"), (MotionAxis::Nod, "Nod"), (MotionAxis::Tilt, "Tilt")] {
-                if ui.selectable_label(m.axis == v, name).clicked() && m.axis != v {
-                    m.axis = v;
-                    changed = true;
+            for (v, name) in choices {
+                if ui.selectable_label(*cur == *v, *name).clicked() && *cur != *v {
+                    *cur = *v;
+                    picked = true;
                 }
             }
         });
+        picked
+    }
+    label(ui, "Moves by itself");
+    let modes = [
+        (MotionMode::None, "No"),
+        (MotionMode::Spin, "Spins"),
+        (MotionMode::Sway, "Sways"),
+        (MotionMode::Wobble, "Wobbles"),
+        (MotionMode::Bounce, "Bounces"),
+        (MotionMode::Breathe, "Breathes"),
+        (MotionMode::Heartbeat, "Beats"),
+        (MotionMode::Showcase, "Shows off"),
+    ];
+    if pick(ui, &mut m.mode, &modes) {
+        m.seconds = m.mode.default_seconds();
+        changed = true;
+    }
+    if m.mode != MotionMode::None {
+        if m.mode.has_axis() {
+            ui.horizontal(|ui| {
+                ui.label("Around");
+                changed |= pick(ui, &mut m.axis, &[(MotionAxis::Turn, "Turn"), (MotionAxis::Nod, "Nod"), (MotionAxis::Tilt, "Tilt")]);
+            });
+        }
         ui.horizontal(|ui| {
-            ui.label(if m.mode == MotionMode::Spin { "One turn takes" } else { "One swing takes" });
+            ui.label(match m.mode {
+                MotionMode::Spin | MotionMode::Showcase => "One turn takes",
+                MotionMode::Sway => "One swing takes",
+                MotionMode::Wobble => "One wobble takes",
+                MotionMode::Bounce => "One bounce takes",
+                MotionMode::Breathe => "One breath takes",
+                _ => "One beat takes",
+            });
             let mut secs = m.seconds;
-            let resp = ui.add(egui::DragValue::new(&mut secs).update_while_editing(false).speed(0.2).range(1.0..=120.0).max_decimals(1).suffix(" s"));
+            let resp = ui.add(egui::DragValue::new(&mut secs).update_while_editing(false).speed(0.1).range(0.3..=120.0).max_decimals(1).suffix(" s"));
             if committed(ui, resp, &mut secs) {
                 m.seconds = secs;
                 changed = true;
             }
-            if ui.checkbox(&mut m.reverse, "The other way").changed() {
+            if matches!(m.mode, MotionMode::Spin | MotionMode::Sway | MotionMode::Wobble | MotionMode::Showcase)
+                && ui.checkbox(&mut m.reverse, "The other way").changed()
+            {
                 changed = true;
             }
         });
@@ -908,15 +937,27 @@ fn motion_settings(ui: &mut Ui, m: &mut deckcraft_interactive::object::Motion) -
     if ui.checkbox(&mut m.float, "Floats up and down").changed() {
         changed = true;
     }
+    label(ui, "When the slide opens");
+    changed |= pick(
+        ui,
+        &mut m.entrance,
+        &[(Entrance::None, "Nothing"), (Entrance::Grow, "Grows in"), (Entrance::Spin, "Spins in"), (Entrance::Drop, "Drops in")],
+    );
     label(ui, "When the pointer comes near");
-    ui.horizontal_wrapped(|ui| {
-        for (v, name) in [(Hover::None, "Nothing"), (Hover::Jiggle, "Jiggles"), (Hover::Follow, "Turns to it"), (Hover::Pause, "Stops")] {
-            if ui.selectable_label(m.hover == v, name).clicked() && m.hover != v {
-                m.hover = v;
-                changed = true;
-            }
-        }
-    });
+    changed |= pick(
+        ui,
+        &mut m.hover,
+        &[
+            (Hover::None, "Nothing"),
+            (Hover::Jiggle, "Jiggles"),
+            (Hover::Follow, "Turns to it"),
+            (Hover::Shy, "Turns away"),
+            (Hover::Hop, "Hops"),
+            (Hover::Grow, "Grows"),
+            (Hover::Faster, "Speeds up"),
+            (Hover::Pause, "Stops"),
+        ],
+    );
     hint(
         ui,
         "Turn goes round the model, Nod tips it forward and back, Tilt rolls it like a wheel. It moves in the show, and here while it is selected.",

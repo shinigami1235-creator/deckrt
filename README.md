@@ -128,10 +128,17 @@ The server listens on the laptop's wifi address; when the venue wifi keeps phone
 hotspot turns on the Windows mobile hotspot and the QR follows it.
 
 
-A 3D model can move by itself. In its settings, **Moves by itself** spins it or sways it about
-Turn, Nod or Tilt, with the seconds one turn takes; **Floats up and down** makes it rise and sink;
-and **When the pointer comes near** makes it jiggle, turn towards the pointer, or stop. It moves
-in the show, and on the slide while it is selected.
+A 3D model can move by itself. In its settings:
+
+- **Moves by itself**: spins or sways (about Turn, Nod or Tilt), wobbles like a settling coin,
+  bounces, breathes, beats like a heart, or shows off (turns and nods like a product on a
+  stand), with the seconds one round takes.
+- **Floats up and down**.
+- **When the slide opens**: grows in, spins in or drops in.
+- **When the pointer comes near**: jiggles, turns to it, turns away, hops, grows, speeds up or
+  stops.
+
+It moves in the show, and on the slide while it is selected.
 ## How the objects are stored
 
 Each object is an ordinary shape in the slide with a tag named `DECKRT.OBJECT` holding its settings
