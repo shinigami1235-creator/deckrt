@@ -127,6 +127,11 @@ model, points, or draws on the slide, and the presenter takes control back or cl
 The server listens on the laptop's wifi address; when the venue wifi keeps phones apart, Start
 hotspot turns on the Windows mobile hotspot and the QR follows it.
 
+
+A 3D model can move by itself. In its settings, **Moves by itself** spins it or sways it about
+Turn, Nod or Tilt, with the seconds one turn takes; **Floats up and down** makes it rise and sink;
+and **When the pointer comes near** makes it jiggle, turn towards the pointer, or stop. It moves
+in the show, and on the slide while it is selected.
 ## How the objects are stored
 
 Each object is an ordinary shape in the slide with a tag named `DECKRT.OBJECT` holding its settings

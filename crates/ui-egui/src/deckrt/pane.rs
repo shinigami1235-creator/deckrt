@@ -178,6 +178,8 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 }
             }
             hint(ui, "Drag the round handle on the slide to turn the model; use the wheel to zoom.");
+            ui.add_space(4.0);
+            changed |= motion_settings(ui, &mut c.motion);
         }
         Config::ImageSwap(c) => {
             label(ui, "Pictures");
@@ -864,5 +866,60 @@ fn advanced(app: &mut SlideApp, ui: &mut Ui, sh: &deckcraft_model::Shape, next: 
         Config::InjectionMap(_) => {}
     }
     let _ = Kind::Model;
+    changed
+}
+
+/// deckrt: a 3D model's own motion: spin or sway, float, and what it does near the pointer.
+fn motion_settings(ui: &mut Ui, m: &mut deckcraft_interactive::object::Motion) -> bool {
+    use deckcraft_interactive::object::{Hover, MotionAxis, MotionMode};
+    let mut changed = false;
+    label(ui, "Moves by itself");
+    ui.horizontal_wrapped(|ui| {
+        for (v, name) in [(MotionMode::None, "No"), (MotionMode::Spin, "Spins"), (MotionMode::Sway, "Sways")] {
+            if ui.selectable_label(m.mode == v, name).clicked() && m.mode != v {
+                m.mode = v;
+                changed = true;
+            }
+        }
+    });
+    if m.mode != MotionMode::None {
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Around");
+            for (v, name) in [(MotionAxis::Turn, "Turn"), (MotionAxis::Nod, "Nod"), (MotionAxis::Tilt, "Tilt")] {
+                if ui.selectable_label(m.axis == v, name).clicked() && m.axis != v {
+                    m.axis = v;
+                    changed = true;
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(if m.mode == MotionMode::Spin { "One turn takes" } else { "One swing takes" });
+            let mut secs = m.seconds;
+            let resp = ui.add(egui::DragValue::new(&mut secs).update_while_editing(false).speed(0.2).range(1.0..=120.0).max_decimals(1).suffix(" s"));
+            if committed(ui, resp, &mut secs) {
+                m.seconds = secs;
+                changed = true;
+            }
+            if ui.checkbox(&mut m.reverse, "The other way").changed() {
+                changed = true;
+            }
+        });
+    }
+    if ui.checkbox(&mut m.float, "Floats up and down").changed() {
+        changed = true;
+    }
+    label(ui, "When the pointer comes near");
+    ui.horizontal_wrapped(|ui| {
+        for (v, name) in [(Hover::None, "Nothing"), (Hover::Jiggle, "Jiggles"), (Hover::Follow, "Turns to it"), (Hover::Pause, "Stops")] {
+            if ui.selectable_label(m.hover == v, name).clicked() && m.hover != v {
+                m.hover = v;
+                changed = true;
+            }
+        }
+    });
+    hint(
+        ui,
+        "Turn goes round the model, Nod tips it forward and back, Tilt rolls it like a wheel. It moves in the show, and here while it is selected.",
+    );
     changed
 }

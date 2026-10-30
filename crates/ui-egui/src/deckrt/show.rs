@@ -156,6 +156,8 @@ pub struct Ext {
     pub phones_tried: bool,
     /// Copies of the audience screen for the phones.
     pub shots: ScreenShots,
+    /// Where each 3D model is in its own motion.
+    pub motion: std::collections::HashMap<StateKey, super::motion::Live>,
 }
 
 /// deckrt: the phones see the slide as the audience screen draws it. When what it shows changes
@@ -232,6 +234,7 @@ impl Default for Ext {
             changed_at: 0.0,
             phones_tried: false,
             shots: ScreenShots::default(),
+            motion: Default::default(),
         }
     }
 }
@@ -507,10 +510,27 @@ pub fn draw(
             (TypeState::Model { layers, turn, zoom, .. }, Config::Model(c)) => {
                 let ShapeKind::Model3d { media, poster } = &it.shape.kind else { continue };
                 let hidden: Vec<String> = layers.iter().filter(|(_, on)| !**on).map(|(n, _)| n.clone()).collect();
-                let turning = ext.turning.contains(&it.id) || ext.drag.is_some_and(|d| matches!(d, Drag::Model { id, .. } if id == it.id));
+                let mut turning = ext.turning.contains(&it.id) || ext.drag.is_some_and(|d| matches!(d, Drag::Model { id, .. } if id == it.id));
+                // The model's own motion, stepped by whichever window draws it.
+                let live = c.motion.is_on().then(|| {
+                    let l = ext.motion.entry(it.key()).or_default();
+                    l.step(&c.motion, now, rect, ctx.input(|i| i.pointer.hover_pos()));
+                    l.clone()
+                });
+                let rect = super::motion::floated(&c.motion, now, rect);
+                if let Some(l) = &live
+                    && l.moving(&c.motion)
+                {
+                    turning = true;
+                    ctx.request_repaint();
+                }
                 let drawn = st.models.model(doc, *media).and_then(|model| {
                     let t = Turn { turn: *turn, zoom: *zoom };
                     let view = super::model_view::view_of(&model, c, &t);
+                    let view = match &live {
+                        Some(l) => l.apply(&c.motion, now, view),
+                        None => view,
+                    };
                     let w = (rect.width() * ppp).round().clamp(1.0, 4096.0) as u32;
                     let h = (rect.height() * ppp).round().clamp(1.0, 4096.0) as u32;
                     let slot = it.id as u64 | ((role == Role::Presenter) as u64) << 40;

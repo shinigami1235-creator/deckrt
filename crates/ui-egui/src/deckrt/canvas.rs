@@ -212,9 +212,27 @@ pub fn draw(app: &mut SlideApp, ui: &mut Ui, painter: &egui::Painter, xf: Xf) {
         }
         if let (ShapeKind::Model3d { media, .. }, Config::Model(c)) = (&sh.kind, &o.config) {
             let turn = app.deckrt.turn(sh.id.0);
-            let turning = app.deckrt.turning.is_some_and(|(id, _)| id == sh.id.0);
+            let mut turning = app.deckrt.turning.is_some_and(|(id, _)| id == sh.id.0);
+            // A selected model shows its own motion, so its settings can be seen while set.
+            let now = ui.input(|i| i.time);
+            let live = (selected.contains(&sh.id.0) && c.motion.is_on()).then(|| {
+                let l = app.deckrt.motion.entry(sh.id.0).or_default();
+                l.step(&c.motion, now, rect, ui.input(|i| i.pointer.hover_pos()));
+                l.clone()
+            });
+            let rect = if live.is_some() { super::motion::floated(&c.motion, now, rect) } else { rect };
+            if let Some(l) = &live
+                && l.moving(&c.motion)
+            {
+                turning = true;
+                ui.ctx().request_repaint();
+            }
             if let Some(model) = app.deckrt.models.model(&doc, *media) {
                 let view = super::model_view::view_of(&model, c, &turn);
+                let view = match &live {
+                    Some(l) => l.apply(&c.motion, now, view),
+                    None => view,
+                };
                 let w = (rect.width() * ppp).round().max(1.0) as u32;
                 let h = (rect.height() * ppp).round().max(1.0) as u32;
                 let hidden = c.hidden_layers.clone();

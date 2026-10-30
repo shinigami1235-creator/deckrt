@@ -174,13 +174,19 @@ pub fn definitions() -> Vec<Value> {
         tool(
             "add_3d_model",
             "Add 3D model",
-            "A 3D model (.glb, .obj or .stl) the presenter turns by dragging and zooms with the wheel. Each press of the shortcut takes the next layer off (the file's top-level parts).",
+            "A 3D model (.glb, .obj or .stl) the presenter turns by dragging and zooms with the wheel. Each press of the shortcut takes the next layer off (the file's top-level parts). It can also move by itself in the show: spin or sway about an axis, float, and jiggle, turn to the pointer or stop when the pointer comes near.",
             obj(
                 common(
                     props(json!({
                         "model": picture("The model file (path or base64)"),
                         "hidden_layers": {"type": "array", "items": {"type": "string"}, "description": "Layer names hidden when the slide opens"},
-                        "link_group": string("Models on one slide with the same name turn together")
+                        "link_group": string("Models on one slide with the same name turn together"),
+                        "motion": {"type": "string", "enum": ["none", "spin", "sway"], "description": "Moves by itself: round and round, or back and forth 30° (default none)"},
+                        "axis": {"type": "string", "enum": ["turn", "nod", "tilt"], "description": "turn: round its up axis (turntable); nod: tips forward and back; tilt: rolls like a wheel facing the viewer (default turn)"},
+                        "seconds": num("Seconds for one turn or one swing, 1 to 120 (default 12)"),
+                        "reverse": boolean("The other way round"),
+                        "float": boolean("Rises and sinks gently"),
+                        "hover": {"type": "string", "enum": ["none", "jiggle", "follow", "pause"], "description": "When the pointer comes near: jiggle, follow (turns towards it) or pause the motion (default none)"}
                     })),
                     false,
                 ),
@@ -436,6 +442,21 @@ fn run(b: &mut dyn Backend, name: &str, a: &Value) -> Result<Value, String> {
             if let Some(g) = s("link_group") {
                 config["link_group"] = json!(g);
             }
+            let mut motion = json!({});
+            for (k, key) in [("motion", "mode"), ("axis", "axis"), ("hover", "hover")] {
+                if let Some(v) = s(k) {
+                    motion[key] = json!(v);
+                }
+            }
+            if let Some(v) = f(a, "seconds") {
+                motion["seconds"] = json!(v);
+            }
+            for k in ["reverse", "float"] {
+                if let Some(v) = a.get(k).and_then(Value::as_bool) {
+                    motion[k] = json!(v);
+                }
+            }
+            config["motion"] = motion;
             insert(b, "model", a, config, vec![model], None, false)
         }
         "add_measure" => {

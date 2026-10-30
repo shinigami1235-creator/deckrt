@@ -344,6 +344,15 @@ Every change to an upstream file, with the reason. Search for `deckrt` in the fi
   is used when it exists.
 
 
+- 3D model motion (round 12). `ModelConfig.motion` (`Motion`: spin or sway about Turn, Nod or
+  Tilt, seconds, reverse, float, and a hover reaction: jiggle, follow, pause) is kept in the
+  object's settings with serde defaults, so older decks stay still. `deckrt::motion::Live` holds
+  each model's phase, jiggle energy and follow turn; the show keeps one per object in
+  `Ext.motion`, stepped by whichever window draws it with that window's pointer, so the
+  audience screen and presenter view agree. The motion is added to the drawn view (`rotation`,
+  `theta`/`phi`, `radius`) and the float moves the drawn box; the object's state is untouched, so
+  phones see the model still. The editor plays it while the model is selected.
+
 ## PowerPoint feel: next run
 
 Gaps that would keep the app from feeling like PowerPoint, ranked, with a rough size. Sizes:

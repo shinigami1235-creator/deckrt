@@ -384,6 +384,7 @@ pub fn convert(o: &OldObject, dir: &Path, load: &mut dyn FnMut(&Path) -> Option<
                     initial_rotation: [rot.first().copied().unwrap_or(0.0), rot.get(1).copied().unwrap_or(0.0), rot.get(2).copied().unwrap_or(0.0)],
                     camera,
                     link_group: string(c, "link_group"),
+                    ..Default::default()
                 }),
                 Some(glb),
             )

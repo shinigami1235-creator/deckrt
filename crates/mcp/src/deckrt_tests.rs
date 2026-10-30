@@ -187,3 +187,24 @@ fn an_open_window_is_used_from_the_first_call() {
     assert!(w.has_ui());
     assert_eq!(seen.lock().unwrap().clone(), ["deckrt.ping", "document.inspect"]);
 }
+
+#[test]
+fn an_agent_sets_a_models_own_motion() {
+    let mut s = Server::new(Box::new(Headless::new()));
+    tool(&mut s, "new_presentation", json!({}));
+    let obj = "byB0cmkKdiAwIDAgMAp2IDEgMCAwCnYgMCAxIDAKZiAxIDIgMwo=";
+    let m = tool(
+        &mut s,
+        "add_3d_model",
+        json!({"model": {"data": obj, "name": "triangle.obj"}, "motion": "spin", "axis": "tilt", "seconds": 8, "hover": "jiggle", "float": true}),
+    );
+    let motion = &m["object"]["config"]["motion"];
+    assert_eq!(motion["mode"], "spin", "{m}");
+    assert_eq!(motion["axis"], "tilt");
+    assert_eq!(motion["seconds"], 8.0);
+    assert_eq!(motion["hover"], "jiggle");
+    assert_eq!(motion["float"], true);
+    // Left out, it stays still.
+    let still = tool(&mut s, "add_3d_model", json!({"model": {"data": obj, "name": "triangle.obj"}}));
+    assert_eq!(still["object"]["config"]["motion"]["mode"], "none");
+}

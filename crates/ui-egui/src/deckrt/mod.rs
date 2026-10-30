@@ -58,6 +58,7 @@ pub mod gpu {
     }
 }
 pub mod model_view;
+pub mod motion;
 pub mod pane;
 pub mod phones;
 pub mod pictures;
@@ -127,6 +128,8 @@ pub struct State {
     pub live_touched: bool,
     /// AI Agents: whether agents may work in this window.
     pub agents: agents::State,
+    /// The selected models' own motion in the editor, by shape id.
+    pub motion: std::collections::HashMap<u32, motion::Live>,
 }
 
 impl State {

@@ -146,6 +146,84 @@ pub struct ModelConfig {
     pub camera: Option<CameraPose>,
     /// Models on one slide sharing a non-empty name turn together in the show.
     pub link_group: String,
+    /// deckrt: how the model moves by itself in the show.
+    pub motion: Motion,
+}
+
+/// What a 3D model does by itself in the show: spin or sway about one of its axes, float up and
+/// down, and react when the pointer comes near it. All off by default.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Motion {
+    pub mode: MotionMode,
+    pub axis: MotionAxis,
+    /// Seconds for one full turn (spin) or one swing there and back (sway), 1 to 120.
+    pub seconds: f64,
+    /// The other way round.
+    pub reverse: bool,
+    /// Rises and sinks gently.
+    pub float: bool,
+    pub hover: Hover,
+}
+
+impl Default for Motion {
+    fn default() -> Self {
+        Motion { mode: MotionMode::None, axis: MotionAxis::Turn, seconds: 12.0, reverse: false, float: false, hover: Hover::None }
+    }
+}
+
+impl Motion {
+    /// Something moves (by itself or near the pointer).
+    pub fn is_on(&self) -> bool {
+        self.mode != MotionMode::None || self.float || self.hover != Hover::None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotionMode {
+    #[default]
+    None,
+    /// Round and round.
+    Spin,
+    /// Back and forth, 30° either way.
+    Sway,
+}
+
+/// The axis, named as the starting turn's fields are: Turn goes round the model's up axis, Nod
+/// tips it forward and back, Tilt rolls it like a wheel facing you.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotionAxis {
+    #[default]
+    Turn,
+    Nod,
+    Tilt,
+}
+
+impl MotionAxis {
+    /// The index into a view's `rotation` (`[roll, pitch, yaw]`).
+    pub fn index(self) -> usize {
+        match self {
+            MotionAxis::Turn => 2,
+            MotionAxis::Nod => 1,
+            MotionAxis::Tilt => 0,
+        }
+    }
+}
+
+/// What the model does when the pointer comes near.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Hover {
+    #[default]
+    None,
+    /// Wobbles and bounces while the pointer is close, settling after it leaves.
+    Jiggle,
+    /// Turns a little towards the pointer.
+    Follow,
+    /// Stops spinning or swaying while the pointer is on it.
+    Pause,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -502,6 +580,7 @@ impl InteractiveObject {
         let finite = |v: f64, d: f64| if v.is_finite() { v } else { d };
         match &mut self.config {
             Config::Model(c) => {
+                c.motion.seconds = finite(c.motion.seconds, 12.0).clamp(1.0, 120.0);
                 c.layers.truncate(10_000);
                 c.hidden_layers.retain(|h| c.layers.contains(h));
                 for r in &mut c.initial_rotation {
@@ -666,6 +745,22 @@ pub fn new_slide_key(doc: &deckcraft_model::Presentation, slide: usize) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_model_saved_before_motion_stays_still_and_motion_round_trips() {
+        let old = r#"{"v":1,"type":"model","config":{"layers":["a"],"link_group":""}}"#;
+        let o = InteractiveObject::from_json(old).expect("old model");
+        let Config::Model(c) = &o.config else { panic!("model") };
+        assert_eq!(c.motion, Motion::default());
+        assert!(!c.motion.is_on());
+        let new = r#"{"v":1,"type":"model","config":{"motion":{"mode":"spin","axis":"tilt","seconds":0,"hover":"jiggle"}}}"#;
+        let o = InteractiveObject::from_json(new).expect("model with motion");
+        let Config::Model(c) = &o.config else { panic!("model") };
+        assert_eq!((c.motion.mode, c.motion.axis, c.motion.hover), (MotionMode::Spin, MotionAxis::Tilt, Hover::Jiggle));
+        assert_eq!(c.motion.seconds, 1.0, "held to one second a turn");
+        let back = InteractiveObject::from_json(&o.to_json()).expect("again");
+        assert_eq!(back, o);
+    }
 
     #[test]
     fn every_kind_round_trips_through_json() {

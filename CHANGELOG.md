@@ -6,6 +6,9 @@ in the test build so far.
 
 ## Unreleased
 
+- **3D models move by themselves.** A model can spin or sway about any of its axes, float up
+  and down, and jiggle, turn towards the pointer or stop when the pointer comes near. Set it under
+  Moves by itself in the model's settings; it plays in the show and on the slide while selected.
 - **AI agents make decks in deckrt.** File › Options › AI Agents adds deckrt to Claude Desktop in one
   click, or copies the settings for Claude Code, Cursor and other agents. An agent can add polls,
   popups, image swaps, wipes, scrubs, zoom regions, 3D models, measurements, injection maps and
