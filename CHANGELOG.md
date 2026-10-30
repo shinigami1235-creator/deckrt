@@ -6,6 +6,9 @@ in the test build so far.
 
 ## Unreleased
 
+- **Update deckrt says what it installed.** It names the build it downloads, never reuses an
+  earlier download, and says when the update is done, cancelled or stopped with an error (with
+  the installer's log in the temp folder).
 - **3D models move by themselves.** A model can spin or sway about any of its axes, float up
   and down, and jiggle, turn towards the pointer or stop when the pointer comes near. Set it under
   Moves by itself in the model's settings; it plays in the show and on the slide while selected.
