@@ -4,7 +4,7 @@ Each numbered version of deckrt has a section here, newest first. The section be
 on the version's page under Releases when the build makes that version. Unreleased lists what is
 in the test build so far.
 
-## Unreleased
+## 0.1.1 (2026-11-01)
 
 - **More ways for a 3D model to move.** Besides spinning and swaying, a model can wobble,
   bounce, breathe, beat like a heart or show off like a product on a stand; grow, spin or drop
